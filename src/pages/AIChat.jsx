@@ -41,16 +41,14 @@ function Message({ msg }) {
   const isUser = msg.role === 'user'
   return (
     <div className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-      <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm ${
-        isUser ? 'bg-green-600 text-white' : 'bg-white border border-gray-200 text-gray-600'
-      }`}>
+      <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm ${isUser ? 'gradient-emerald text-white' : 'bg-white/5 border border-white/10 text-slate-400'
+        }`}>
         {isUser ? <User size={14} /> : <Bot size={14} />}
       </div>
-      <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-        isUser
-          ? 'bg-green-600 text-white rounded-tr-sm'
-          : 'bg-white border border-gray-100 shadow-sm text-gray-800 rounded-tl-sm'
-      }`}>
+      <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${isUser
+          ? 'gradient-emerald text-white rounded-tr-sm'
+          : 'glass-card-solid text-slate-300 rounded-tl-sm'
+        }`}>
         {msg.content.split('\n').map((line, i) => (
           <p key={i} className={line === '' ? 'mt-2' : ''}>{line}</p>
         ))}
@@ -106,7 +104,6 @@ export default function AIChat() {
     setLoading(true)
 
     try {
-      // Build messages for API (exclude initial assistant greeting for API)
       const apiMessages = newMessages
         .filter((_, i) => !(i === 0 && newMessages[0]?.role === 'assistant'))
         .map(m => ({ role: m.role, content: m.content }))
@@ -153,58 +150,54 @@ export default function AIChat() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-160px)] animate-fade-in">
-      {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h1 className="font-display font-black text-2xl text-gray-900">AI Coach</h1>
-          <p className="text-gray-500 text-sm">Powered by Groq + Llama 3.1</p>
+          <h1 className="font-display font-black text-2xl text-slate-100">AI Coach</h1>
+          <p className="text-slate-500 text-sm">Powered by Groq + Llama 3.1</p>
         </div>
         {!apiKey && (
           <button
             onClick={() => navigate('/settings')}
-            className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold px-3 py-2 rounded-xl hover:bg-amber-100 transition-colors"
+            className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-semibold px-3 py-2 rounded-xl hover:bg-amber-500/15 transition-colors"
           >
             <Settings size={13} /> Add API Key
           </button>
         )}
       </div>
 
-      {/* Error banner */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-3 flex items-start gap-2">
-          <AlertCircle size={14} className="text-red-500 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-red-700">{error}</p>
+        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-3 flex items-start gap-2">
+          <AlertCircle size={14} className="text-red-400 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-red-300">{error}</p>
         </div>
       )}
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto space-y-3 pb-2">
         {messages.map((msg, i) => (
           <Message key={i} msg={msg} />
         ))}
         {loading && (
           <div className="flex gap-2.5">
-            <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-white border border-gray-200 text-gray-600">
+            <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-white/5 border border-white/10 text-slate-400">
               <Bot size={14} />
             </div>
-            <div className="bg-white border border-gray-100 shadow-sm rounded-2xl rounded-tl-sm px-4 py-3">
-              <Loader2 size={16} className="animate-spin text-green-500" />
+            <div className="glass-card-solid rounded-2xl rounded-tl-sm px-4 py-3">
+              <Loader2 size={16} className="animate-spin text-emerald-400" />
             </div>
           </div>
         )}
         <div ref={bottomRef} />
       </div>
 
-      {/* Quick prompts (when no user messages yet) */}
       {messages.filter(m => m.role === 'user').length === 0 && !loading && (
         <div className="py-3">
-          <p className="text-xs text-gray-400 font-medium mb-2">Quick starters:</p>
+          <p className="text-xs text-slate-600 font-medium mb-2">Quick starters:</p>
           <div className="flex flex-wrap gap-2">
             {QUICK_PROMPTS.map((qp, i) => (
               <button
                 key={i}
                 onClick={() => sendMessage(qp.text)}
-                className="bg-white border border-gray-200 text-gray-700 text-xs font-medium px-3 py-1.5 rounded-full hover:border-green-300 hover:text-green-700 transition-colors"
+                className="glass-card-solid text-slate-400 text-xs font-medium px-3 py-1.5 rounded-full hover:text-emerald-400 hover:border-emerald-500/30 transition-colors"
               >
                 {qp.label}
               </button>
@@ -213,8 +206,7 @@ export default function AIChat() {
         </div>
       )}
 
-      {/* Input */}
-      <div className="flex gap-2 pt-2 border-t border-gray-100">
+      <div className="flex gap-2 pt-2 border-t border-white/5">
         <textarea
           ref={inputRef}
           value={input}
@@ -223,13 +215,13 @@ export default function AIChat() {
           placeholder="Ask about drills, behavior, tactics..."
           disabled={loading || !apiKey}
           rows={1}
-          className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-green-300 disabled:bg-gray-50 disabled:text-gray-400"
+          className="flex-1 glass-input px-3 py-2.5 text-sm resize-none disabled:opacity-40"
           style={{ minHeight: '44px', maxHeight: '100px' }}
         />
         <button
           onClick={() => sendMessage()}
           disabled={loading || !input.trim() || !apiKey}
-          className="flex-shrink-0 w-10 h-10 rounded-xl bg-green-600 text-white flex items-center justify-center hover:bg-green-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+          className="flex-shrink-0 w-10 h-10 rounded-xl gradient-emerald text-white flex items-center justify-center hover:opacity-90 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
         >
           {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
         </button>

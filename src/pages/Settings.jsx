@@ -9,17 +9,17 @@ import { SEASON_INFO } from '../data/sessions'
 function SectionHeader({ icon: Icon, title }) {
   return (
     <div className="flex items-center gap-2 mb-3 mt-6 first:mt-0">
-      <div className="w-7 h-7 rounded-lg bg-green-100 flex items-center justify-center">
-        <Icon size={14} className="text-green-700" />
+      <div className="w-7 h-7 rounded-lg bg-emerald-500/15 flex items-center justify-center">
+        <Icon size={14} className="text-emerald-400" />
       </div>
-      <h2 className="font-display font-bold text-gray-800 text-sm uppercase tracking-wide">{title}</h2>
+      <h2 className="font-display font-bold text-slate-300 text-sm uppercase tracking-widest">{title}</h2>
     </div>
   )
 }
 
 function SettingCard({ children }) {
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden mb-3">
+    <div className="glass-card-solid overflow-hidden mb-3">
       {children}
     </div>
   )
@@ -111,22 +111,22 @@ export default function Settings() {
   return (
     <div className="animate-fade-in pb-4">
       <div className="mb-5">
-        <h1 className="font-display font-black text-2xl text-gray-900">Settings</h1>
-        <p className="text-gray-500 text-sm mt-0.5">Configure your coaching app</p>
+        <h1 className="font-display font-black text-2xl text-slate-100">Settings</h1>
+        <p className="text-slate-500 text-sm mt-0.5">Configure your coaching app</p>
       </div>
 
       {/* ── AI Section ──────────────────────────────────── */}
       <SectionHeader icon={Key} title="AI Assistant" />
       <SettingCard>
         <div className="p-4">
-          <p className="text-sm font-semibold text-gray-800 mb-1">Groq API Key</p>
-          <p className="text-xs text-gray-500 mb-3">
+          <p className="text-sm font-semibold text-slate-200 mb-1">Groq API Key</p>
+          <p className="text-xs text-slate-500 mb-3">
             Free at{' '}
             <a
               href="https://console.groq.com"
               target="_blank"
               rel="noreferrer"
-              className="text-green-600 font-medium underline underline-offset-2"
+              className="text-emerald-400 font-medium underline underline-offset-2"
             >
               console.groq.com
             </a>
@@ -135,25 +135,25 @@ export default function Settings() {
 
           {savedKey ? (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5">
-                <Check size={14} className="text-green-600 flex-shrink-0" />
-                <span className="text-xs text-green-800 font-mono flex-1 truncate">
+              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/15 rounded-xl px-3 py-2.5">
+                <Check size={14} className="text-emerald-400 flex-shrink-0" />
+                <span className="text-xs text-emerald-300 font-mono flex-1 truncate">
                   {showKey ? savedKey : maskedKey}
                 </span>
-                <button onClick={() => setShowKey(v => !v)} className="text-green-600 flex-shrink-0">
+                <button onClick={() => setShowKey(v => !v)} className="text-emerald-400 flex-shrink-0">
                   {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={handleRemoveKey}
-                  className="flex-1 text-xs font-semibold text-red-600 border border-red-200 bg-red-50 rounded-xl py-2 hover:bg-red-100 transition-colors"
+                  className="flex-1 text-xs font-semibold text-red-400 border border-red-500/20 bg-red-500/10 rounded-xl py-2 hover:bg-red-500/15 transition-colors"
                 >
                   Remove Key
                 </button>
                 <button
                   onClick={() => { setSavedKey(null); setApiKey('') }}
-                  className="flex-1 text-xs font-semibold text-gray-600 border border-gray-200 bg-gray-50 rounded-xl py-2 hover:bg-gray-100 transition-colors"
+                  className="flex-1 text-xs font-semibold text-slate-400 border border-white/10 bg-white/5 rounded-xl py-2 hover:bg-white/10 transition-colors"
                 >
                   Replace Key
                 </button>
@@ -167,11 +167,11 @@ export default function Settings() {
                   value={apiKey}
                   onChange={e => setApiKey(e.target.value)}
                   placeholder="gsk_••••••••••••••••••••••••"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-mono pr-10 focus:outline-none focus:ring-2 focus:ring-green-300"
+                  className="w-full glass-input px-3 py-2.5 text-sm font-mono pr-10"
                 />
                 <button
                   onClick={() => setShowKey(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500"
                 >
                   {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
@@ -179,11 +179,10 @@ export default function Settings() {
               <button
                 onClick={handleSaveKey}
                 disabled={!apiKey.trim()}
-                className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                  keySaved
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed'
-                }`}
+                className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${keySaved
+                    ? 'bg-emerald-500/15 text-emerald-400'
+                    : 'gradient-emerald text-white hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed'
+                  }`}
               >
                 {keySaved ? '✓ Key Saved!' : 'Save API Key'}
               </button>
@@ -195,40 +194,38 @@ export default function Settings() {
       {/* ── Data Section ────────────────────────────────── */}
       <SectionHeader icon={Database} title="Data & Backup" />
 
-      {/* Export */}
       <SettingCard>
         <button
           onClick={handleExport}
-          className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors text-left"
+          className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors text-left"
         >
-          <div className="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
-            <Download size={16} className="text-blue-600" />
+          <div className="w-9 h-9 rounded-xl bg-blue-500/15 flex items-center justify-center flex-shrink-0">
+            <Download size={16} className="text-blue-400" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-gray-800">Export Backup</p>
-            <p className="text-xs text-gray-500">Save player data, notes, and scores as JSON</p>
+            <p className="text-sm font-semibold text-slate-200">Export Backup</p>
+            <p className="text-xs text-slate-500">Save player data, notes, and scores as JSON</p>
           </div>
-          <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
+          <ChevronRight size={16} className="text-slate-600 flex-shrink-0" />
         </button>
       </SettingCard>
 
-      {/* Import */}
       <SettingCard>
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={importing}
-          className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors text-left disabled:opacity-60"
+          className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors text-left disabled:opacity-50"
         >
-          <div className="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0">
-            <Upload size={16} className="text-purple-600" />
+          <div className="w-9 h-9 rounded-xl bg-violet-500/15 flex items-center justify-center flex-shrink-0">
+            <Upload size={16} className="text-violet-400" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-gray-800">Import Backup</p>
-            <p className="text-xs text-gray-500">
+            <p className="text-sm font-semibold text-slate-200">Import Backup</p>
+            <p className="text-xs text-slate-500">
               {importing ? 'Importing…' : 'Restore from a previous backup file'}
             </p>
           </div>
-          <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
+          <ChevronRight size={16} className="text-slate-600 flex-shrink-0" />
         </button>
         <input
           ref={fileInputRef}
@@ -239,27 +236,26 @@ export default function Settings() {
         />
         {importSuccess && (
           <div className="px-4 pb-3">
-            <div className="bg-green-50 border border-green-200 rounded-xl px-3 py-2 flex items-center gap-2">
-              <Check size={13} className="text-green-600" />
-              <p className="text-xs text-green-700 font-medium">Import successful!</p>
+            <div className="bg-emerald-500/10 border border-emerald-500/15 rounded-xl px-3 py-2 flex items-center gap-2">
+              <Check size={13} className="text-emerald-400" />
+              <p className="text-xs text-emerald-300 font-medium">Import successful!</p>
             </div>
           </div>
         )}
         {importError && (
           <div className="px-4 pb-3">
-            <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 flex items-center gap-2">
-              <AlertTriangle size={13} className="text-red-500" />
-              <p className="text-xs text-red-700">{importError}</p>
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2 flex items-center gap-2">
+              <AlertTriangle size={13} className="text-red-400" />
+              <p className="text-xs text-red-300">{importError}</p>
             </div>
           </div>
         )}
       </SettingCard>
 
-      {/* Cross-device tip */}
-      <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 mb-3">
-        <Wifi size={14} className="text-blue-500 flex-shrink-0 mt-0.5" />
-        <p className="text-xs text-blue-700 leading-relaxed">
-          <span className="font-semibold">Using on multiple devices?</span> Export on one device and Import on the other to sync your player data and notes.
+      <div className="flex items-start gap-2.5 bg-blue-500/10 border border-blue-500/15 rounded-2xl px-4 py-3 mb-3">
+        <Wifi size={14} className="text-blue-400 flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-blue-300/80 leading-relaxed">
+          <span className="font-semibold text-blue-300">Using on multiple devices?</span> Export on one device and Import on the other to sync your player data and notes.
         </p>
       </div>
 
@@ -269,36 +265,36 @@ export default function Settings() {
         {!showResetConfirm ? (
           <button
             onClick={() => setShowResetConfirm(true)}
-            className="w-full flex items-center gap-3 p-4 hover:bg-red-50 transition-colors text-left"
+            className="w-full flex items-center gap-3 p-4 hover:bg-red-500/5 transition-colors text-left"
           >
-            <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
-              <RotateCcw size={16} className="text-red-500" />
+            <div className="w-9 h-9 rounded-xl bg-red-500/15 flex items-center justify-center flex-shrink-0">
+              <RotateCcw size={16} className="text-red-400" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-red-600">Reset Player Roster</p>
-              <p className="text-xs text-gray-500">Restore default 5-player roster (keeps notes)</p>
+              <p className="text-sm font-semibold text-red-400">Reset Player Roster</p>
+              <p className="text-xs text-slate-500">Restore default 5-player roster (keeps notes)</p>
             </div>
-            <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
+            <ChevronRight size={16} className="text-slate-600 flex-shrink-0" />
           </button>
         ) : (
           <div className="p-4">
             <div className="flex items-start gap-2 mb-3">
-              <AlertTriangle size={15} className="text-amber-500 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-gray-700">
+              <AlertTriangle size={15} className="text-amber-400 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-slate-400">
                 This will re-add the default Player 1–5 roster. Any custom player names or emojis will be overwritten. Notes and scores are kept.
               </p>
             </div>
             <div className="flex gap-2">
               <button
                 onClick={() => setShowResetConfirm(false)}
-                className="flex-1 text-xs font-semibold text-gray-600 border border-gray-200 rounded-xl py-2.5 hover:bg-gray-50 transition-colors"
+                className="flex-1 text-xs font-semibold text-slate-400 border border-white/10 rounded-xl py-2.5 hover:bg-white/5 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleReset}
                 disabled={resetting}
-                className="flex-1 text-xs font-semibold text-white bg-red-500 rounded-xl py-2.5 hover:bg-red-600 transition-colors disabled:opacity-60"
+                className="flex-1 text-xs font-semibold text-white bg-red-500 rounded-xl py-2.5 hover:bg-red-600 transition-colors disabled:opacity-50"
               >
                 {resetting ? 'Resetting…' : 'Confirm Reset'}
               </button>
@@ -307,9 +303,9 @@ export default function Settings() {
         )}
         {resetDone && (
           <div className="px-4 pb-3">
-            <div className="bg-green-50 border border-green-200 rounded-xl px-3 py-2 flex items-center gap-2">
-              <Check size={13} className="text-green-600" />
-              <p className="text-xs text-green-700 font-medium">Roster reset complete!</p>
+            <div className="bg-emerald-500/10 border border-emerald-500/15 rounded-xl px-3 py-2 flex items-center gap-2">
+              <Check size={13} className="text-emerald-400" />
+              <p className="text-xs text-emerald-300 font-medium">Roster reset complete!</p>
             </div>
           </div>
         )}
@@ -319,30 +315,22 @@ export default function Settings() {
       <SectionHeader icon={Info} title="About" />
       <SettingCard>
         <div className="p-4 space-y-3">
-          <div className="flex justify-between items-center">
-            <span className="text-xs text-gray-500">App</span>
-            <span className="text-xs font-semibold text-gray-700">U-6 Coach Command</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-xs text-gray-500">Season</span>
-            <span className="text-xs font-semibold text-gray-700">{SEASON_INFO.name}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-xs text-gray-500">Sessions</span>
-            <span className="text-xs font-semibold text-gray-700">16 practices + 8 games</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-xs text-gray-500">Storage</span>
-            <span className="text-xs font-semibold text-gray-700">Local (IndexedDB)</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-xs text-gray-500">AI Model</span>
-            <span className="text-xs font-semibold text-gray-700">Llama 3.1 via Groq</span>
-          </div>
+          {[
+            { label: 'App', value: 'U-6 Coach Command' },
+            { label: 'Season', value: SEASON_INFO.name },
+            { label: 'Sessions', value: '16 practices + 8 games' },
+            { label: 'Storage', value: 'Local (IndexedDB)' },
+            { label: 'AI Model', value: 'Llama 3.1 via Groq' },
+          ].map(({ label, value }) => (
+            <div key={label} className="flex justify-between items-center">
+              <span className="text-xs text-slate-500">{label}</span>
+              <span className="text-xs font-semibold text-slate-300">{value}</span>
+            </div>
+          ))}
         </div>
 
-        <div className="border-t border-gray-50 px-4 py-3">
-          <p className="text-[10px] text-gray-400 leading-relaxed">
+        <div className="border-t border-white/5 px-4 py-3">
+          <p className="text-[10px] text-slate-600 leading-relaxed">
             Coaching frameworks: FC Barcelona Academy · The Gunner Way (Arsenal) · Ajax TIPS · Coerver Coaching · Horst Wein / Funino
           </p>
         </div>
