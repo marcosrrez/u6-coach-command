@@ -14,10 +14,80 @@ const FRAMEWORK_COLORS = {
 
 const DIFF_LABELS = ['', 'Beginner', 'Intermediate', 'Advanced']
 
-/**
- * DrillPicker — modal for selecting a drill from the library to add to a phase.
- * Converts a DRILLS[] entry into an activity object compatible with phase.activities[].
- */
+function DrillCard({ drill, expandedId, setExpandedId, handleSelect }) {
+    return (
+        <div className="glass-card-solid overflow-hidden">
+            <button
+                className="w-full flex items-center gap-3 p-3 text-left hover:bg-white/5 transition-colors"
+                onClick={() => setExpandedId(expandedId === drill.id ? null : drill.id)}
+            >
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-sm font-semibold text-slate-200">{drill.name}</span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${FRAMEWORK_COLORS[drill.framework] || ''}`}>
+                            {drill.framework}
+                        </span>
+                        {drill.isCustom && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 flex items-center gap-0.5">
+                                <Sparkles size={8} /> AI
+                            </span>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-3 text-[10px] text-slate-500">
+                        <span className="flex items-center gap-0.5"><Clock size={10} /> {drill.duration}</span>
+                        <span className="flex items-center gap-0.5"><Users size={10} /> {drill.players}</span>
+                        <span>{DIFF_LABELS[drill.difficulty] || ''}</span>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                        onClick={e => { e.stopPropagation(); handleSelect(drill) }}
+                        className="p-1.5 rounded-lg gradient-emerald text-white hover:opacity-90 transition-opacity"
+                    >
+                        <Plus size={14} />
+                    </button>
+                    {expandedId === drill.id
+                        ? <ChevronUp size={12} className="text-slate-500" />
+                        : <ChevronDown size={12} className="text-slate-500" />
+                    }
+                </div>
+            </button>
+
+            {expandedId === drill.id && (
+                <div className="px-3 pb-3 border-t border-white/5 pt-2 space-y-2">
+                    <p className="text-xs text-slate-400">{drill.description}</p>
+                    {drill.setup && (
+                        <div className="bg-blue-500/10 border border-blue-500/15 rounded-lg p-2">
+                            <p className="text-[10px] font-bold text-blue-300 uppercase mb-0.5">Setup</p>
+                            <p className="text-xs text-blue-200/80">{drill.setup}</p>
+                        </div>
+                    )}
+                    {drill.instructions?.length > 0 && (
+                        <div>
+                            <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">Steps</p>
+                            <ol className="space-y-0.5">
+                                {drill.instructions.map((s, i) => (
+                                    <li key={i} className="text-xs text-slate-400 flex gap-1.5">
+                                        <span className="text-emerald-400 font-bold flex-shrink-0">{i + 1}.</span>
+                                        {s}
+                                    </li>
+                                ))}
+                            </ol>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}
+
+const PHASE_CATEGORY_MAP = {
+    'Dynamic Activation': ['Warm-Up'],
+    'Technical Block': ['Dribbling', 'Passing', 'Shooting', '1v1', 'Scanning'],
+    'Small-Sided Game': ['Small-Sided Game', 'Rondo', '1v1'],
+    'HEART Circle': ['Fun / Story', 'Cool-Down'],
+}
+
 export default function DrillPicker({ open, onClose, onSelect, phaseName }) {
     const [search, setSearch] = useState('')
     const [category, setCategory] = useState('All')
@@ -33,7 +103,7 @@ export default function DrillPicker({ open, onClose, onSelect, phaseName }) {
         return [...DRILLS, ...customDrillsList.map(d => ({ ...d, id: `custom-${d.id}`, isCustom: true }))]
     }, [customDrillsList])
 
-    const filtered = useMemo(() => {
+    const { suggested, rest } = useMemo(() => {
         let results = allDrills
         if (category !== 'All') results = results.filter(d => d.category === category)
         if (framework !== 'All') results = results.filter(d => d.framework === framework)
@@ -44,8 +114,15 @@ export default function DrillPicker({ open, onClose, onSelect, phaseName }) {
                 d.description.toLowerCase().includes(q)
             )
         }
-        return results
-    }, [search, category, framework, allDrills])
+        const priorityCategories = PHASE_CATEGORY_MAP[phaseName] || []
+        if (priorityCategories.length === 0 || category !== 'All') {
+            return { suggested: [], rest: results }
+        }
+        return {
+            suggested: results.filter(d => priorityCategories.includes(d.category)),
+            rest: results.filter(d => !priorityCategories.includes(d.category)),
+        }
+    }, [search, category, framework, allDrills, phaseName])
 
     const handleSelect = (drill) => {
         // Convert drill library entry to an activity object
@@ -114,78 +191,34 @@ export default function DrillPicker({ open, onClose, onSelect, phaseName }) {
                         {FRAMEWORKS.map(f => <option key={f} value={f}>{f}</option>)}
                     </select>
                     <span className="text-[10px] text-slate-600 flex items-center ml-auto flex-shrink-0">
-                        {filtered.length} drills
+                        {suggested.length + rest.length} drills
                     </span>
                 </div>
 
                 {/* Drill list */}
                 <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                    {filtered.length === 0 ? (
+                    {suggested.length === 0 && rest.length === 0 ? (
                         <p className="text-center text-slate-500 text-sm py-8">No drills found</p>
-                    ) : filtered.map(drill => (
-                        <div key={drill.id} className="glass-card-solid overflow-hidden">
-                            <button
-                                className="w-full flex items-center gap-3 p-3 text-left hover:bg-white/5 transition-colors"
-                                onClick={() => setExpandedId(expandedId === drill.id ? null : drill.id)}
-                            >
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-0.5">
-                                        <span className="text-sm font-semibold text-slate-200">{drill.name}</span>
-                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${FRAMEWORK_COLORS[drill.framework] || ''}`}>
-                                            {drill.framework}
-                                        </span>
-                                        {drill.isCustom && (
-                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 flex items-center gap-0.5">
-                                                <Sparkles size={8} /> AI
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-3 text-[10px] text-slate-500">
-                                        <span className="flex items-center gap-0.5"><Clock size={10} /> {drill.duration}</span>
-                                        <span className="flex items-center gap-0.5"><Users size={10} /> {drill.players}</span>
-                                        <span>{DIFF_LABELS[drill.difficulty] || ''}</span>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2 flex-shrink-0">
-                                    <button
-                                        onClick={e => { e.stopPropagation(); handleSelect(drill) }}
-                                        className="p-1.5 rounded-lg gradient-emerald text-white hover:opacity-90 transition-opacity"
-                                    >
-                                        <Plus size={14} />
-                                    </button>
-                                    {expandedId === drill.id
-                                        ? <ChevronUp size={12} className="text-slate-500" />
-                                        : <ChevronDown size={12} className="text-slate-500" />
-                                    }
-                                </div>
-                            </button>
-
-                            {expandedId === drill.id && (
-                                <div className="px-3 pb-3 border-t border-white/5 pt-2 space-y-2">
-                                    <p className="text-xs text-slate-400">{drill.description}</p>
-                                    {drill.setup && (
-                                        <div className="bg-blue-500/10 border border-blue-500/15 rounded-lg p-2">
-                                            <p className="text-[10px] font-bold text-blue-300 uppercase mb-0.5">Setup</p>
-                                            <p className="text-xs text-blue-200/80">{drill.setup}</p>
+                    ) : (
+                        <>
+                            {suggested.length > 0 && (
+                                <>
+                                    <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest px-1 pb-1">
+                                        ★ Suggested for {phaseName}
+                                    </p>
+                                    {suggested.map(drill => <DrillCard key={drill.id} drill={drill} expandedId={expandedId} setExpandedId={setExpandedId} handleSelect={handleSelect} />)}
+                                    {rest.length > 0 && (
+                                        <div className="flex items-center gap-2 py-1">
+                                            <div className="flex-1 h-px bg-white/5" />
+                                            <span className="text-[10px] text-slate-600 font-semibold uppercase tracking-widest">Full Library</span>
+                                            <div className="flex-1 h-px bg-white/5" />
                                         </div>
                                     )}
-                                    {drill.instructions?.length > 0 && (
-                                        <div>
-                                            <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">Steps</p>
-                                            <ol className="space-y-0.5">
-                                                {drill.instructions.map((s, i) => (
-                                                    <li key={i} className="text-xs text-slate-400 flex gap-1.5">
-                                                        <span className="text-emerald-400 font-bold flex-shrink-0">{i + 1}.</span>
-                                                        {s}
-                                                    </li>
-                                                ))}
-                                            </ol>
-                                        </div>
-                                    )}
-                                </div>
+                                </>
                             )}
-                        </div>
-                    ))}
+                            {rest.map(drill => <DrillCard key={drill.id} drill={drill} expandedId={expandedId} setExpandedId={setExpandedId} handleSelect={handleSelect} />)}
+                        </>
+                    )}
                 </div>
             </div>
         </div>
