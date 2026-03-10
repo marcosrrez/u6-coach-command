@@ -1,43 +1,65 @@
 import { useState, useRef, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Bot, X, Send, Loader2, AlertCircle, User, Wrench, Sparkles, ChevronDown } from 'lucide-react'
+import { Bot, Send, Loader2, AlertCircle, User, Wrench, Sparkles, ChevronDown } from 'lucide-react'
 import { getSetting } from '../db/db'
 import { TOOL_DEFINITIONS, executeTool, buildSystemPrompt } from '../ai/aiTools'
 import { PRACTICES, GAMES } from '../data/sessions'
 
-// ─── Page context detection ───────────────────────────────────────────────────
+// ─── Page badge (small chip shown in panel header) ───────────────────────────
+function getPageBadge(pathname) {
+  const sessionMatch = pathname.match(/^\/session\/(.+)$/)
+  const gameMatch = pathname.match(/^\/game\/(.+)$/)
+  if (sessionMatch) {
+    const s = PRACTICES.find(p => p.id === sessionMatch[1])
+    if (s) return { emoji: '📋', label: `Practice ${s.sessionNumber}` }
+  }
+  if (gameMatch) {
+    const g = GAMES.find(g => g.id === gameMatch[1])
+    if (g) return { emoji: '⚽', label: `Game ${g.gameNumber}` }
+  }
+  const map = {
+    '/': { emoji: '🏠', label: 'Dashboard' },
+    '/calendar': { emoji: '📅', label: 'Calendar' },
+    '/drills': { emoji: '🎯', label: 'Drills' },
+    '/players': { emoji: '👥', label: 'Players' },
+    '/philosophy': { emoji: '📚', label: 'Philosophy' },
+  }
+  return map[pathname] || { emoji: '⚽', label: 'Coaching App' }
+}
+
+// ─── Page context (injected into system prompt) ───────────────────────────────
 function getPageContext(pathname) {
   const sessionMatch = pathname.match(/^\/session\/(.+)$/)
   const gameMatch = pathname.match(/^\/game\/(.+)$/)
 
   if (sessionMatch) {
-    const session = PRACTICES.find(p => p.id === sessionMatch[1])
-    if (session) return {
-      text: `User is viewing Practice ${session.sessionNumber} — "${session.title}" (${session.date}). Theme: ${session.theme}. Focus: ${session.subtitle || session.focus}.`,
+    const s = PRACTICES.find(p => p.id === sessionMatch[1])
+    if (s) return {
+      text: `User is viewing Practice ${s.sessionNumber} — "${s.title}" (${s.date}). Theme: ${s.theme}. Focus: ${s.subtitle || s.focus}.`,
       quickPrompts: [
-        { label: '📋 Full plan', text: `Show me the full plan for Practice ${session.sessionNumber}.` },
-        { label: '🎯 Add drill', text: `Suggest a drill to add to Practice ${session.sessionNumber}.` },
-        { label: '💡 Coach tips', text: `Give me field coaching tips for the "${session.title}" theme with 5-year-olds.` },
-        { label: '📝 Player note', text: `I want to record a player observation from Practice ${session.sessionNumber}.` },
+        { label: '📋 Full plan', text: `Show me the full plan for Practice ${s.sessionNumber}.` },
+        { label: '🎯 Add drill', text: `Suggest a drill to add to Practice ${s.sessionNumber}.` },
+        { label: '💡 Coach tips', text: `Give me field coaching tips for the "${s.title}" theme with 5-year-olds.` },
+        { label: '✅ Mark done', text: `We just finished Practice ${s.sessionNumber}. Please mark it as complete.` },
       ],
     }
   }
 
   if (gameMatch) {
-    const game = GAMES.find(g => g.id === gameMatch[1])
-    if (game) return {
-      text: `User is viewing Game ${game.gameNumber}${game.opponent ? ` vs. ${game.opponent}` : ''} on ${game.date}.`,
+    const g = GAMES.find(g => g.id === gameMatch[1])
+    if (g) return {
+      text: `User is viewing Game ${g.gameNumber}${g.opponent ? ` vs. ${g.opponent}` : ''} on ${g.date}.`,
       quickPrompts: [
         { label: '🏆 Game prep', text: 'What should I do in the warm-up before a U-6 game?' },
-        { label: '⭐ Halftime tips', text: 'What\'s a great halftime talk for 5-year-olds?' },
-        { label: '📝 Player note', text: 'I want to note a player standout from today\'s game.' },
+        { label: '⭐ Halftime', text: "What's a great halftime talk for 5-year-olds?" },
+        { label: '✅ Mark done', text: `We just finished Game ${g.gameNumber}. Please mark it as complete.` },
       ],
     }
   }
 
   const PAGE_CONTEXTS = {
     '/': {
-      text: 'User is on the home dashboard, viewing the season overview and upcoming sessions.',
+      text: 'User is on the home dashboard, viewing season overview and upcoming sessions.',
       quickPrompts: [
         { label: '📋 Next practice', text: 'Show me the plan for my next practice session.' },
         { label: '📊 Season overview', text: 'Give me a quick overview of my season progress.' },
@@ -117,15 +139,21 @@ function Message({ msg }) {
         {isUser ? <User size={12} /> : <Bot size={12} />}
       </div>
       <div className={`max-w-[85%] rounded-2xl px-3 py-2.5 text-sm leading-relaxed ${isUser ? 'gradient-emerald text-white rounded-tr-sm' : 'glass-card-solid text-slate-300 rounded-tl-sm'}`}>
-        {msg.content.split('\n').map((line, i) => (
-          <p key={i} className={line === '' ? 'mt-1.5' : ''}>{line}</p>
-        ))}
+        {msg.content.split('\n').map((line, i) => {
+          if (line.startsWith('- ') || line.startsWith('• ')) {
+            return <p key={i} className="pl-3 relative before:content-['•'] before:absolute before:left-0 before:text-emerald-400">{line.slice(2)}</p>
+          }
+          if (line.startsWith('**') && line.endsWith('**')) {
+            return <p key={i} className="font-semibold text-slate-100">{line.slice(2, -2)}</p>
+          }
+          return <p key={i} className={line === '' ? 'mt-1.5' : ''}>{line}</p>
+        })}
       </div>
     </div>
   )
 }
 
-// ─── Main floating AI component ───────────────────────────────────────────────
+// ─── Main floating AI ─────────────────────────────────────────────────────────
 export default function AIFloating() {
   const { pathname } = useLocation()
   const [open, setOpen] = useState(false)
@@ -139,31 +167,34 @@ export default function AIFloating() {
   const inputRef = useRef(null)
   const systemPromptRef = useRef('')
 
-  // Initialize when panel first opens
+  // ── Always refresh API key when panel opens ──────────────────────────────────
+  useEffect(() => {
+    if (!open) return
+    getSetting('groqApiKey').then(key => {
+      const resolved = key || import.meta.env.VITE_GROQ_API_KEY || null
+      setApiKey(resolved)
+    })
+  }, [open])
+
+  // ── One-time init: build system prompt + welcome message ─────────────────────
   useEffect(() => {
     if (!open || initialized) return
-
     const init = async () => {
       const key = await getSetting('groqApiKey')
-      const resolvedKey = key || import.meta.env.VITE_GROQ_API_KEY || null
-      setApiKey(resolvedKey)
-
+      const resolved = key || import.meta.env.VITE_GROQ_API_KEY || null
       const pageCtx = getPageContext(pathname)
       const base = await buildSystemPrompt()
       systemPromptRef.current = base + `\n\n## Current Page Context\n${pageCtx.text}`
-
       setMessages([{
         role: 'assistant',
-        content: resolvedKey
-          ? `Hey Coach! 👋 I can see you're ${pageCtx.text.toLowerCase().replace('user is ', '')} How can I help?`
-          : `Hi Coach! 👋 Add your free Groq API key in Settings to unlock AI coaching.`,
+        content: resolved ? `Hey Coach! 👋 How can I help you today?` : `Hi Coach! 👋 Add your free Groq API key in Settings to unlock AI coaching.`,
       }])
       setInitialized(true)
     }
     init()
-  }, [open, initialized, pathname])
+  }, [open, initialized])
 
-  // Update page context when route changes (keep conversation intact)
+  // ── Patch system prompt when route changes; refresh welcome if pre-conversation ─
   useEffect(() => {
     if (!initialized) return
     const ctx = getPageContext(pathname)
@@ -171,9 +202,28 @@ export default function AIFloating() {
       /\n\n## Current Page Context\n[\s\S]*/,
       `\n\n## Current Page Context\n${ctx.text}`
     )
+    // If still on first message, update it to reflect new location
+    setMessages(prev => {
+      if (prev.length !== 1 || prev[0].role !== 'assistant') return prev
+      return [{
+        role: 'assistant',
+        content: apiKey ? `Hey Coach! 👋 How can I help you today?` : prev[0].content,
+      }]
+    })
   }, [pathname, initialized])
 
-  // Scroll to bottom & focus input when panel opens
+  // ── Update welcome message text when API key comes in ────────────────────────
+  useEffect(() => {
+    if (!initialized || !apiKey) return
+    setMessages(prev => {
+      if (prev.length === 1 && prev[0].role === 'assistant' && prev[0].content.includes('API key')) {
+        return [{ role: 'assistant', content: `Hey Coach! 👋 How can I help you today?` }]
+      }
+      return prev
+    })
+  }, [apiKey, initialized])
+
+  // ── Scroll + focus ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!open) return
     setTimeout(() => {
@@ -186,7 +236,7 @@ export default function AIFloating() {
     if (open) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
-  // ─── Groq API ───────────────────────────────────────────────────────────────
+  // ── Groq API ──────────────────────────────────────────────────────────────────
   const callGroq = async (msgs) => {
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -209,7 +259,7 @@ export default function AIFloating() {
     return { content: msg?.content || null, toolCalls: msg?.tool_calls || null, rawAssistantMessage: msg }
   }
 
-  // ─── Send message ───────────────────────────────────────────────────────────
+  // ── Send message ──────────────────────────────────────────────────────────────
   const sendMessage = async (text) => {
     const userText = text || input.trim()
     if (!userText || loading || !apiKey) return
@@ -262,30 +312,24 @@ export default function AIFloating() {
   }
 
   const pageCtx = getPageContext(pathname)
+  const badge = getPageBadge(pathname)
   const hasUserMessages = messages.some(m => m.role === 'user')
 
   return (
     <>
       {/* Backdrop */}
       {open && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
-          onClick={() => setOpen(false)}
-        />
+        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={() => setOpen(false)} />
       )}
 
       {/* Slide-up panel */}
       <div
-        className={`fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-2xl z-50 transition-transform duration-300 ease-out ${
-          open ? 'translate-y-0' : 'translate-y-full'
-        }`}
+        className={`fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-2xl z-50 transition-transform duration-300 ease-out ${open ? 'translate-y-0' : 'translate-y-full'}`}
       >
-        <div
-          className="bg-[#0d1117] border border-white/10 rounded-t-3xl shadow-2xl flex flex-col"
-          style={{ height: '78vh' }}
-        >
+        <div className="bg-[#0d1117] border border-white/10 rounded-t-3xl shadow-2xl flex flex-col" style={{ height: '78vh' }}>
+
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-white/8 flex-shrink-0">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 flex-shrink-0">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-xl gradient-emerald flex items-center justify-center shadow-lg">
                 <Bot size={15} className="text-white" />
@@ -295,12 +339,18 @@ export default function AIFloating() {
                 <p className="text-[10px] text-slate-500 leading-tight">Groq · Llama 3.3 · Full system access</p>
               </div>
             </div>
-            <button
-              onClick={() => setOpen(false)}
-              className="p-2 rounded-xl text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors"
-            >
-              <ChevronDown size={18} />
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Current page context badge */}
+              <span className="text-[10px] font-medium text-slate-500 bg-white/5 border border-white/8 px-2 py-1 rounded-full">
+                {badge.emoji} {badge.label}
+              </span>
+              <button
+                onClick={() => setOpen(false)}
+                className="p-2 rounded-xl text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors"
+              >
+                <ChevronDown size={18} />
+              </button>
+            </div>
           </div>
 
           {/* Messages */}
@@ -320,7 +370,7 @@ export default function AIFloating() {
             <div ref={bottomRef} />
           </div>
 
-          {/* Quick prompts — shown before first user message */}
+          {/* Quick prompts — before first user message */}
           {!hasUserMessages && !loading && initialized && (
             <div className="px-4 pt-1 pb-2 flex-shrink-0">
               <div className="flex flex-wrap gap-1.5">
@@ -345,8 +395,11 @@ export default function AIFloating() {
             </div>
           )}
 
-          {/* Input */}
-          <div className="flex gap-2 px-4 pb-6 pt-2 border-t border-white/5 flex-shrink-0">
+          {/* Input with safe-area bottom padding */}
+          <div
+            className="flex gap-2 px-4 pt-2 border-t border-white/5 flex-shrink-0"
+            style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom, 16px))' }}
+          >
             <textarea
               ref={inputRef}
               value={input}
@@ -370,10 +423,11 @@ export default function AIFloating() {
               {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
             </button>
           </div>
+
         </div>
       </div>
 
-      {/* FAB button — always visible when panel is closed */}
+      {/* FAB — with conversation indicator dot */}
       {!open && (
         <button
           onClick={() => setOpen(true)}
@@ -388,6 +442,10 @@ export default function AIFloating() {
           aria-label="Open AI Coach"
         >
           <Bot size={22} />
+          {/* Dot indicator: conversation in progress */}
+          {hasUserMessages && (
+            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-400 rounded-full border-2 border-[#0d1117]" />
+          )}
         </button>
       )}
     </>
