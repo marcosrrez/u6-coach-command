@@ -46,8 +46,8 @@ function Message({ msg }) {
         {isUser ? <User size={14} /> : <Bot size={14} />}
       </div>
       <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${isUser
-          ? 'gradient-emerald text-white rounded-tr-sm'
-          : 'glass-card-solid text-slate-300 rounded-tl-sm'
+        ? 'gradient-emerald text-white rounded-tr-sm'
+        : 'glass-card-solid text-slate-300 rounded-tl-sm'
         }`}>
         {msg.content.split('\n').map((line, i) => (
           <p key={i} className={line === '' ? 'mt-2' : ''}>{line}</p>
@@ -69,8 +69,9 @@ export default function AIChat() {
 
   useEffect(() => {
     getSetting('groqApiKey').then(key => {
-      setApiKey(key)
-      if (!key) {
+      const resolvedKey = key || import.meta.env.VITE_GROQ_API_KEY || null
+      setApiKey(resolvedKey)
+      if (!resolvedKey) {
         setMessages([{
           role: 'assistant',
           content: "Hi Coach! 👋 I'm your AI coaching assistant, trained on Barcelona, Arsenal, Ajax, Coerver, and Funino methods.\n\nTo get started, I need your Groq API key (it's free!). Head to Settings to add it.",
