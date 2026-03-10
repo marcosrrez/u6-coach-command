@@ -19,8 +19,19 @@ db.version(2).stores({
   developmentScores: '++id, sessionId, playerId, createdAt',
   phaseChecks: '++id, sessionId, phaseIndex, checkedAt',
   settings: 'key',
-  // Session activity customizations — overrides default phase content
   sessionCustomizations: 'sessionId',
+});
+
+db.version(3).stores({
+  players: '++id, name, createdAt',
+  sessionCompletions: '++id, sessionId, completedAt, type',
+  playerNotes: '++id, sessionId, playerId, createdAt',
+  developmentScores: '++id, sessionId, playerId, createdAt',
+  phaseChecks: '++id, sessionId, phaseIndex, checkedAt',
+  settings: 'key',
+  sessionCustomizations: 'sessionId',
+  // AI-created custom drills
+  customDrills: '++id, name, category, framework, createdAt',
 });
 
 // ─── Default Players ───────────────────────────────────────────────────────────
@@ -199,9 +210,25 @@ export async function deleteSessionCustomization(sessionId) {
   await db.sessionCustomizations.delete(sessionId);
 }
 
+// ─── Custom Drill Operations ──────────────────────────────────────────────────
+export async function addCustomDrill(drill) {
+  return db.customDrills.add({
+    ...drill,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+export async function getCustomDrills() {
+  return db.customDrills.toArray();
+}
+
+export async function deleteCustomDrill(id) {
+  return db.customDrills.delete(id);
+}
+
 // ─── Export / Import ───────────────────────────────────────────────────────────
 export async function exportData() {
-  const [players, completions, notes, scores, phases, settingsAll, customizations] =
+  const [players, completions, notes, scores, phases, settingsAll, customizations, customDrillsAll] =
     await Promise.all([
       db.players.toArray(),
       db.sessionCompletions.toArray(),
@@ -210,10 +237,11 @@ export async function exportData() {
       db.phaseChecks.toArray(),
       db.settings.toArray(),
       db.sessionCustomizations.toArray(),
+      db.customDrills.toArray(),
     ]);
   return {
     exportedAt: new Date().toISOString(),
-    version: 2,
+    version: 3,
     players,
     completions,
     notes,
@@ -221,6 +249,7 @@ export async function exportData() {
     phases,
     settings: settingsAll,
     sessionCustomizations: customizations,
+    customDrills: customDrillsAll,
   };
 }
 

@@ -1,44 +1,40 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Loader2, AlertCircle, Bot, User, Settings } from 'lucide-react'
+import { Send, Loader2, AlertCircle, Bot, User, Settings, Wrench, Sparkles, Check } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSetting } from '../db/db'
-import { SEASON_INFO, PRACTICES, GAMES } from '../data/sessions'
-
-const SYSTEM_PROMPT = `You are an expert U-6 soccer coach assistant helping coach a team of 5 players through an 8-week season. You have deep knowledge of these frameworks:
-
-1. FC Barcelona (Barça Academy): Dynamic Systems Theory, 4-phase sessions, HEART values (Humility, Effort, Ambition, Respect, Teamwork), 3-Second Rule, Rondo, Further Leg concept, 3v3/4v4 no-goalkeeper games.
-
-2. Arsenal (The Gunner Way): Strong Young Gunner (SYG) model, 4 Pillars, 4 S's (Safe, Sweating, Smiling, Success), Play-Practice-Play structure, story-based coaching.
-
-3. Ajax TIPS Model: Technique, Insight, Personality, Speed. "Ajax Head" scanning. Chaos Rondo with instant transitions.
-
-4. Coerver Coaching: Foundation Pyramid, 1,000 touches per session, 6 foot surfaces, Mirror Game, Killing Touch, Step-Hop-Go, Cruyff Turn.
-
-5. Horst Wein / Funino: 4-goal field, 3v3 format, Scoring Zone, coach asks questions ONLY during stoppages.
-
-The team has 5 players aged 5-6. Practice days are Tuesdays and Thursdays. Games are on Saturdays. Sessions are 45 minutes.
-
-Key principles:
-- Every child succeeds every session
-- Joy and play are the priority
-- Technical development through repetition and fun
-- No keeper in small-sided games
-- Questions not instructions (Funino principle)
-- Individual ball mastery before group play
-
-Be warm, encouraging, and practical. Give specific, actionable coaching tips. Keep answers concise for a coach reading on their phone.`
+import { TOOL_DEFINITIONS, executeTool, buildSystemPrompt } from '../ai/aiTools'
 
 const QUICK_PROMPTS = [
-  { label: '🎯 Drill idea', text: 'Give me a fun dribbling drill for 5 players aged 5-6.' },
-  { label: '💬 Team talk', text: 'Write a 1-minute team talk for U-6 kids before a game.' },
-  { label: '😤 Crying player', text: 'One of my players is crying and doesn\'t want to play. What do I do?' },
+  { label: '🎯 Drill idea', text: 'Create a fun dribbling drill with a pirate theme for my 5-year-olds.' },
+  { label: '📋 Next practice', text: 'Show me the plan for my next practice session.' },
+  { label: '👥 My players', text: 'Show me info about my players.' },
   { label: '⚽ Rondo tips', text: 'How do I explain the 4v1 Rondo to 5-year-olds?' },
-  { label: '🏃 Warm-up', text: 'What\'s a great 5-minute warm-up for U-6 kids that gets them excited?' },
-  { label: '👁️ Scanning', text: 'How do I teach the "Ajax Head" scanning technique to 5-year-olds?' },
+  { label: '🔄 Swap drill', text: 'Can you add a fun warm-up to session 1?' },
+  { label: '📊 Season', text: 'Give me an overview of my season progress.' },
 ]
 
+// ─── Message component ────────────────────────────────────────────────────────
 function Message({ msg }) {
   const isUser = msg.role === 'user'
+  const isAction = msg.role === 'action'
+
+  if (isAction) {
+    return (
+      <div className="flex gap-2.5">
+        <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-emerald-500/15 border border-emerald-500/20 text-emerald-400">
+          <Wrench size={13} />
+        </div>
+        <div className="flex-1 bg-emerald-500/10 border border-emerald-500/15 rounded-2xl rounded-tl-sm px-4 py-2.5">
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles size={12} className="text-emerald-400" />
+            <span className="text-[10px] font-bold uppercase text-emerald-400 tracking-wider">{msg.toolName}</span>
+          </div>
+          <p className="text-sm text-emerald-200/80">{msg.content}</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm ${isUser ? 'gradient-emerald text-white' : 'bg-white/5 border border-white/10 text-slate-400'
@@ -57,6 +53,7 @@ function Message({ msg }) {
   )
 }
 
+// ─── Main AI Chat Page ────────────────────────────────────────────────────────
 export default function AIChat() {
   const navigate = useNavigate()
   const [apiKey, setApiKey] = useState(null)
@@ -66,29 +63,38 @@ export default function AIChat() {
   const [error, setError] = useState(null)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
+  const systemPromptRef = useRef('')
 
+  // Load API key and build dynamic system prompt
   useEffect(() => {
-    getSetting('groqApiKey').then(key => {
+    const init = async () => {
+      const key = await getSetting('groqApiKey')
       const resolvedKey = key || import.meta.env.VITE_GROQ_API_KEY || null
       setApiKey(resolvedKey)
+
+      // Build dynamic system prompt with live context
+      systemPromptRef.current = await buildSystemPrompt()
+
       if (!resolvedKey) {
         setMessages([{
           role: 'assistant',
-          content: "Hi Coach! 👋 I'm your AI coaching assistant, trained on Barcelona, Arsenal, Ajax, Coerver, and Funino methods.\n\nTo get started, I need your Groq API key (it's free!). Head to Settings to add it.",
+          content: "Hi Coach! 👋 I'm your AI coaching assistant with full access to your sessions, drills, and player data.\n\nTo get started, I need your Groq API key (it's free!). Head to Settings to add it.",
         }])
       } else {
         setMessages([{
           role: 'assistant',
-          content: "Hi Coach! 👋 I'm your AI coaching assistant, powered by the best youth soccer frameworks: Barça, Arsenal, Ajax, Coerver, and Funino.\n\nAsk me anything about drills, behavior management, tactical questions, or how to make training more fun!",
+          content: "Hi Coach! 👋 I'm your AI coaching assistant with full access to your entire coaching system.\n\nI can:\n• 🎯 Create custom drills and add them to your library\n• 📋 Read and modify any session plan\n• 👥 Track player notes and development\n• 📊 Show your season overview\n\nJust ask me anything!",
         }])
       }
-    })
+    }
+    init()
   }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
+  // ─── Send message with tool calling support ─────────────────────────────────
   const sendMessage = async (text) => {
     const userText = text || input.trim()
     if (!userText || loading) return
@@ -105,40 +111,99 @@ export default function AIChat() {
     setLoading(true)
 
     try {
+      // Build API messages (exclude welcome message and action cards)
       const apiMessages = newMessages
+        .filter(m => m.role !== 'action')
         .filter((_, i) => !(i === 0 && newMessages[0]?.role === 'assistant'))
         .map(m => ({ role: m.role, content: m.content }))
 
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'llama-3.1-8b-instant',
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            ...apiMessages,
-          ],
-          max_tokens: 600,
-          temperature: 0.7,
-        }),
-      })
+      // Call Groq with tools
+      let result = await callGroq(apiMessages)
+      let currentMessages = [...newMessages]
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        throw new Error(err.error?.message || `API error ${response.status}`)
+      // Tool calling loop (max 5 iterations for safety)
+      let iterations = 0
+      while (result.toolCalls && result.toolCalls.length > 0 && iterations < 5) {
+        iterations++
+
+        // Execute each tool call
+        const toolResults = []
+        for (const tc of result.toolCalls) {
+          const args = JSON.parse(tc.function.arguments || '{}')
+          const toolResult = await executeTool(tc.function.name, args)
+
+          // Show action card
+          const actionMsg = {
+            role: 'action',
+            toolName: tc.function.name.replace(/_/g, ' '),
+            content: toolResult.message || toolResult.error || `Executed ${tc.function.name}`,
+          }
+          currentMessages = [...currentMessages, actionMsg]
+          setMessages(currentMessages)
+
+          toolResults.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: JSON.stringify(toolResult),
+          })
+        }
+
+        // Send tool results back to Groq for final response
+        const followUp = [
+          ...apiMessages,
+          result.rawAssistantMessage,
+          ...toolResults,
+        ]
+        result = await callGroq(followUp)
       }
 
-      const data = await response.json()
-      const reply = data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.'
-      setMessages(prev => [...prev, { role: 'assistant', content: reply }])
+      // Final assistant reply
+      if (result.content) {
+        currentMessages = [...currentMessages, { role: 'assistant', content: result.content }]
+        setMessages(currentMessages)
+      }
     } catch (err) {
+      console.error('AI Chat error:', err)
       setError(`Error: ${err.message}`)
-      setMessages(prev => prev.slice(0, -1))
     } finally {
       setLoading(false)
+    }
+  }
+
+  // ─── Groq API call helper ───────────────────────────────────────────────────
+  const callGroq = async (messages) => {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPromptRef.current },
+          ...messages,
+        ],
+        tools: TOOL_DEFINITIONS,
+        tool_choice: 'auto',
+        max_tokens: 1024,
+        temperature: 0.7,
+      }),
+    })
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error(err.error?.message || `API error ${response.status}`)
+    }
+
+    const data = await response.json()
+    const choice = data.choices?.[0]
+    const msg = choice?.message
+
+    return {
+      content: msg?.content || null,
+      toolCalls: msg?.tool_calls || null,
+      rawAssistantMessage: msg,
     }
   }
 
@@ -154,7 +219,7 @@ export default function AIChat() {
       <div className="flex items-center justify-between mb-3">
         <div>
           <h1 className="font-display font-black text-2xl text-slate-100">AI Coach</h1>
-          <p className="text-slate-500 text-sm">Powered by Groq + Llama 3.1</p>
+          <p className="text-slate-500 text-sm">Full system access · Groq + Llama 3.3</p>
         </div>
         {!apiKey && (
           <button
@@ -182,8 +247,9 @@ export default function AIChat() {
             <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-white/5 border border-white/10 text-slate-400">
               <Bot size={14} />
             </div>
-            <div className="glass-card-solid rounded-2xl rounded-tl-sm px-4 py-3">
+            <div className="glass-card-solid rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2">
               <Loader2 size={16} className="animate-spin text-emerald-400" />
+              <span className="text-xs text-slate-500">Thinking...</span>
             </div>
           </div>
         )}
@@ -192,7 +258,7 @@ export default function AIChat() {
 
       {messages.filter(m => m.role === 'user').length === 0 && !loading && (
         <div className="py-3">
-          <p className="text-xs text-slate-600 font-medium mb-2">Quick starters:</p>
+          <p className="text-xs text-slate-600 font-medium mb-2">Try asking:</p>
           <div className="flex flex-wrap gap-2">
             {QUICK_PROMPTS.map((qp, i) => (
               <button
@@ -213,7 +279,7 @@ export default function AIChat() {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask about drills, behavior, tactics..."
+          placeholder="Ask anything — I can read & edit your sessions, drills, and players..."
           disabled={loading || !apiKey}
           rows={1}
           className="flex-1 glass-input px-3 py-2.5 text-sm resize-none disabled:opacity-40"

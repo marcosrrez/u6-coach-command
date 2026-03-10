@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react'
-import { X, Search, Plus, Clock, Users, ChevronDown, ChevronUp } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { X, Search, Plus, Clock, Users, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import { DRILLS, DRILL_CATEGORIES, FRAMEWORKS } from '../data/drills'
+import { getCustomDrills } from '../db/db'
 
 const FRAMEWORK_COLORS = {
     Barça: 'bg-blue-500/20 text-blue-300',
@@ -22,9 +23,18 @@ export default function DrillPicker({ open, onClose, onSelect, phaseName }) {
     const [category, setCategory] = useState('All')
     const [framework, setFramework] = useState('All')
     const [expandedId, setExpandedId] = useState(null)
+    const [customDrillsList, setCustomDrillsList] = useState([])
+
+    useEffect(() => {
+        if (open) getCustomDrills().then(setCustomDrillsList)
+    }, [open])
+
+    const allDrills = useMemo(() => {
+        return [...DRILLS, ...customDrillsList.map(d => ({ ...d, id: `custom-${d.id}`, isCustom: true }))]
+    }, [customDrillsList])
 
     const filtered = useMemo(() => {
-        let results = DRILLS
+        let results = allDrills
         if (category !== 'All') results = results.filter(d => d.category === category)
         if (framework !== 'All') results = results.filter(d => d.framework === framework)
         if (search.trim()) {
@@ -35,7 +45,7 @@ export default function DrillPicker({ open, onClose, onSelect, phaseName }) {
             )
         }
         return results
-    }, [search, category, framework])
+    }, [search, category, framework, allDrills])
 
     const handleSelect = (drill) => {
         // Convert drill library entry to an activity object
@@ -124,6 +134,11 @@ export default function DrillPicker({ open, onClose, onSelect, phaseName }) {
                                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${FRAMEWORK_COLORS[drill.framework] || ''}`}>
                                             {drill.framework}
                                         </span>
+                                        {drill.isCustom && (
+                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 flex items-center gap-0.5">
+                                                <Sparkles size={8} /> AI
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="flex items-center gap-3 text-[10px] text-slate-500">
                                         <span className="flex items-center gap-0.5"><Clock size={10} /> {drill.duration}</span>

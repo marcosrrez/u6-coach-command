@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react'
-import { Search, ChevronDown, ChevronUp, Clock, Users } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { Search, ChevronDown, ChevronUp, Clock, Users, Sparkles, Trash2 } from 'lucide-react'
 import { DRILLS, DRILL_CATEGORIES, FRAMEWORKS, searchDrills } from '../data/drills'
+import { getCustomDrills, deleteCustomDrill } from '../db/db'
 
 const FRAMEWORK_COLORS = {
   Barça: 'bg-blue-500/20 text-blue-300',
@@ -123,20 +124,43 @@ export default function Drills() {
   const [query, setQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState('All')
   const [activeFramework, setActiveFramework] = useState('All')
+  const [customDrillsList, setCustomDrillsList] = useState([])
+
+  useEffect(() => {
+    getCustomDrills().then(setCustomDrillsList)
+  }, [])
+
+  const allDrills = useMemo(() => {
+    return [...DRILLS, ...customDrillsList.map(d => ({ ...d, id: `custom-${d.id}`, isCustom: true }))]
+  }, [customDrillsList])
 
   const filtered = useMemo(() => {
-    let result = DRILLS
-    if (query.trim()) result = searchDrills(query)
+    let result = allDrills
+    if (query.trim()) {
+      const q = query.toLowerCase()
+      result = result.filter(d =>
+        d.name.toLowerCase().includes(q) ||
+        d.description.toLowerCase().includes(q) ||
+        d.category.toLowerCase().includes(q) ||
+        d.framework?.toLowerCase().includes(q)
+      )
+    }
     if (activeCategory !== 'All') result = result.filter(d => d.category === activeCategory)
     if (activeFramework !== 'All') result = result.filter(d => d.framework === activeFramework)
     return result
-  }, [query, activeCategory, activeFramework])
+  }, [query, activeCategory, activeFramework, allDrills])
+
+  const handleDeleteCustom = async (drillId) => {
+    const numId = parseInt(drillId.replace('custom-', ''))
+    await deleteCustomDrill(numId)
+    setCustomDrillsList(prev => prev.filter(d => d.id !== numId))
+  }
 
   return (
     <div className="space-y-4 animate-fade-in">
       <div>
         <h1 className="font-display font-black text-2xl text-slate-100">Drill Library</h1>
-        <p className="text-slate-500 text-sm">{DRILLS.length} drills from 5 frameworks</p>
+        <p className="text-slate-500 text-sm">{allDrills.length} drills from 5 frameworks{customDrillsList.length > 0 ? ` · ${customDrillsList.length} AI-created` : ''}</p>
       </div>
 
       <div className="relative">
@@ -156,8 +180,8 @@ export default function Drills() {
             key={fw}
             onClick={() => setActiveFramework(fw)}
             className={`flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-full transition-all ${activeFramework === fw
-                ? fw === 'All' ? 'bg-slate-200 text-slate-900' : `${FRAMEWORK_COLORS[fw]} shadow-sm`
-                : 'bg-white/5 text-slate-500 hover:bg-white/10 hover:text-slate-300'
+              ? fw === 'All' ? 'bg-slate-200 text-slate-900' : `${FRAMEWORK_COLORS[fw]} shadow-sm`
+              : 'bg-white/5 text-slate-500 hover:bg-white/10 hover:text-slate-300'
               }`}
           >
             {fw}
@@ -171,8 +195,8 @@ export default function Drills() {
             key={cat}
             onClick={() => setActiveCategory(cat)}
             className={`flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full transition-all ${activeCategory === cat
-                ? 'gradient-emerald text-white shadow-sm'
-                : 'glass-card-solid text-slate-500 hover:text-slate-300'
+              ? 'gradient-emerald text-white shadow-sm'
+              : 'glass-card-solid text-slate-500 hover:text-slate-300'
               }`}
           >
             {cat === 'All' ? 'All Categories' : `${CATEGORY_ICONS[cat]} ${cat}`}
