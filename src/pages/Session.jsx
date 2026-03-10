@@ -3,14 +3,17 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { format, parseISO } from 'date-fns'
 import {
   ArrowLeft, Play, Pause, RotateCcw, CheckCircle2, Circle,
-  ChevronDown, ChevronUp, Timer, Flag, Users, Package
+  ChevronDown, ChevronUp, Timer, Flag, Users, Package,
+  Pencil, Plus, X, Minus, ArrowUp, ArrowDown, RotateCw
 } from 'lucide-react'
 import { PRACTICES } from '../data/sessions'
 import {
   markSessionComplete, isSessionComplete,
   getCheckedPhases, checkPhase, uncheckPhase,
   getSessionNotes, savePlayerNote, getPlayers,
+  getSessionCustomization, saveSessionCustomization, deleteSessionCustomization,
 } from '../db/db'
+import DrillPicker from '../components/DrillPicker'
 
 const FRAMEWORK_COLORS = {
   Barça: 'bg-blue-500/20 text-blue-300',
@@ -102,17 +105,111 @@ function PhaseTimer({ durationMin, running, onComplete }) {
   )
 }
 
+// ─── Activity content block (shared by single-activity and multi-activity) ────
+function ActivityContent({ activity }) {
+  return (
+    <div className="space-y-3">
+      {activity.setup && (
+        <div className="bg-blue-500/10 border border-blue-500/15 rounded-xl p-3">
+          <p className="text-xs font-bold text-blue-300 uppercase tracking-wide mb-1">⚙️ Setup</p>
+          <p className="text-sm text-blue-200/80">{activity.setup}</p>
+        </div>
+      )}
+
+      {activity.description && (
+        <p className="text-sm text-slate-400">{activity.description}</p>
+      )}
+
+      {activity.instructions?.length > 0 && (
+        <div>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">📋 Instructions</p>
+          <ol className="space-y-1.5">
+            {activity.instructions.map((step, i) => (
+              <li key={i} className="flex gap-2 text-sm text-slate-300">
+                <span className="flex-shrink-0 w-5 h-5 bg-emerald-500/20 text-emerald-400 rounded-full text-xs font-bold flex items-center justify-center">
+                  {i + 1}
+                </span>
+                {step}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {activity.coachingCues?.length > 0 && (
+        <div>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">🗣️ Coaching Cues</p>
+          <div className="flex flex-wrap gap-2">
+            {activity.coachingCues.map((cue, i) => (
+              <span key={i} className="bg-amber-500/10 text-amber-300 text-xs font-medium px-3 py-1.5 rounded-xl border border-amber-500/15">
+                "{cue}"
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Sub-activity card (for multi-activity phases) ────────────────────────────
+function SubActivityCard({ activity, index, total, editing, onRemove, onMoveUp, onMoveDown, onDurationChange }) {
+  const [open, setOpen] = useState(index === 0)
+
+  return (
+    <div className="border border-white/5 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
+      >
+        <span className="flex-shrink-0 w-6 h-6 bg-emerald-500/20 text-emerald-400 rounded-full text-xs font-bold flex items-center justify-center">
+          {index + 1}
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-slate-200">{activity.name}</p>
+          {activity.framework && (
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide">{activity.framework}</p>
+          )}
+        </div>
+        {editing ? (
+          <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+            <button onClick={() => onDurationChange(Math.max(1, activity.duration - 1))} className="p-1 rounded hover:bg-white/10 text-slate-500"><Minus size={12} /></button>
+            <span className="text-xs text-emerald-400 font-bold w-6 text-center">{activity.duration}</span>
+            <button onClick={() => onDurationChange(activity.duration + 1)} className="p-1 rounded hover:bg-white/10 text-slate-500"><Plus size={12} /></button>
+            <span className="text-[10px] text-slate-600 mr-1">min</span>
+            {index > 0 && <button onClick={onMoveUp} className="p-1 rounded hover:bg-white/10 text-slate-500"><ArrowUp size={12} /></button>}
+            {index < total - 1 && <button onClick={onMoveDown} className="p-1 rounded hover:bg-white/10 text-slate-500"><ArrowDown size={12} /></button>}
+            <button onClick={onRemove} className="p-1 rounded hover:bg-red-500/20 text-red-400"><X size={12} /></button>
+          </div>
+        ) : (
+          <span className="text-xs text-slate-500 flex-shrink-0">{activity.duration} min</span>
+        )}
+        {open ? <ChevronUp size={12} className="text-slate-500" /> : <ChevronDown size={12} className="text-slate-500" />}
+      </button>
+      {open && (
+        <div className="px-3 pb-3 border-t border-white/5 pt-3">
+          <ActivityContent activity={activity} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Phase card ───────────────────────────────────────────────────────────────
-function PhaseCard({ phase, phaseIndex, checked, onCheck, activeTimer, onTimerToggle }) {
+function PhaseCard({ phase, phaseIndex, checked, onCheck, activeTimer, onTimerToggle, editing, onAddDrill, onRemoveActivity, onMoveActivity, onDurationChange, onResetPhase }) {
   const [expanded, setExpanded] = useState(phaseIndex === 0)
   const isActive = activeTimer === phaseIndex
+  const hasActivities = phase.activities?.length > 0
+  const totalDuration = hasActivities ? phase.activities.reduce((s, a) => s + a.duration, 0) : phase.duration
 
   return (
     <div className={`glass-card-solid transition-all duration-200 overflow-hidden
       ${checked ? 'opacity-60' : isActive ? 'border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.1)]' : ''}
     `}>
-      <button
-        className="w-full flex items-center gap-3 p-4 text-left"
+      <div
+        role="button"
+        tabIndex={0}
+        className="w-full flex items-center gap-3 p-4 text-left cursor-pointer"
         onClick={() => setExpanded(!expanded)}
       >
         <button
@@ -128,9 +225,16 @@ function PhaseCard({ phase, phaseIndex, checked, onCheck, activeTimer, onTimerTo
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-display font-bold text-slate-200 text-sm">{phase.name}</span>
-            <span className="text-xs text-slate-500">{phase.duration} min</span>
+            <span className="text-xs text-slate-500">{totalDuration} min</span>
+            {hasActivities && (
+              <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-bold">
+                {phase.activities.length} activities
+              </span>
+            )}
           </div>
-          <p className="text-xs text-slate-500 truncate">{phase.activity}</p>
+          <p className="text-xs text-slate-500 truncate">
+            {hasActivities ? phase.activities.map(a => a.name).join(' → ') : phase.activity}
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${FRAMEWORK_COLORS[phase.framework?.split(' / ')[0]] || 'bg-slate-500/20 text-slate-300'}`}>
@@ -138,21 +242,21 @@ function PhaseCard({ phase, phaseIndex, checked, onCheck, activeTimer, onTimerTo
           </span>
           {expanded ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
         </div>
-      </button>
+      </div>
 
       {expanded && (
         <div className="px-4 pb-4 space-y-4 border-t border-white/5">
           <div className="pt-3">
             <PhaseTimer
-              durationMin={phase.duration}
+              durationMin={totalDuration}
               running={isActive}
               onComplete={() => onTimerToggle(null)}
             />
             <button
               onClick={() => onTimerToggle(isActive ? null : phaseIndex)}
               className={`mt-2 w-full py-2 rounded-xl font-semibold text-sm transition-all ${isActive
-                  ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/15'
-                  : 'gradient-emerald text-white hover:opacity-90'
+                ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/15'
+                : 'gradient-emerald text-white hover:opacity-90'
                 }`}
             >
               {isActive ? <span className="flex items-center justify-center gap-2"><Pause size={14} /> Pause Timer</span>
@@ -160,43 +264,51 @@ function PhaseCard({ phase, phaseIndex, checked, onCheck, activeTimer, onTimerTo
             </button>
           </div>
 
-          {phase.setup && (
-            <div className="bg-blue-500/10 border border-blue-500/15 rounded-xl p-3">
-              <p className="text-xs font-bold text-blue-300 uppercase tracking-wide mb-1">⚙️ Setup</p>
-              <p className="text-sm text-blue-200/80">{phase.setup}</p>
+          {hasActivities ? (
+            <div className="space-y-2">
+              {phase.activities.map((act, i) => (
+                <SubActivityCard
+                  key={`${act.drillId || act.name}-${i}`}
+                  activity={act}
+                  index={i}
+                  total={phase.activities.length}
+                  editing={editing}
+                  onRemove={() => onRemoveActivity(phaseIndex, i)}
+                  onMoveUp={() => onMoveActivity(phaseIndex, i, -1)}
+                  onMoveDown={() => onMoveActivity(phaseIndex, i, 1)}
+                  onDurationChange={(d) => onDurationChange(phaseIndex, i, d)}
+                />
+              ))}
+              {editing && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => onAddDrill(phaseIndex)}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-emerald-500/30 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/5 transition-colors"
+                  >
+                    <Plus size={14} /> Add Drill
+                  </button>
+                  <button
+                    onClick={() => onResetPhase(phaseIndex)}
+                    className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-dashed border-slate-500/30 text-slate-500 text-xs font-semibold hover:bg-white/5 transition-colors"
+                  >
+                    <RotateCw size={12} /> Reset
+                  </button>
+                </div>
+              )}
             </div>
-          )}
-
-          {phase.description && (
-            <p className="text-sm text-slate-400">{phase.description}</p>
-          )}
-
-          {phase.instructions?.length > 0 && (
+          ) : (
             <div>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">📋 Instructions</p>
-              <ol className="space-y-1.5">
-                {phase.instructions.map((step, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-slate-300">
-                    <span className="flex-shrink-0 w-5 h-5 bg-emerald-500/20 text-emerald-400 rounded-full text-xs font-bold flex items-center justify-center">
-                      {i + 1}
-                    </span>
-                    {step}
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
-
-          {phase.coachingCues?.length > 0 && (
-            <div>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">🗣️ Coaching Cues</p>
-              <div className="flex flex-wrap gap-2">
-                {phase.coachingCues.map((cue, i) => (
-                  <span key={i} className="bg-amber-500/10 text-amber-300 text-xs font-medium px-3 py-1.5 rounded-xl border border-amber-500/15">
-                    "{cue}"
-                  </span>
-                ))}
-              </div>
+              <ActivityContent activity={phase} />
+              {editing && (
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() => onAddDrill(phaseIndex)}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-emerald-500/30 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/5 transition-colors"
+                  >
+                    <Plus size={14} /> Add Drill
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -219,6 +331,13 @@ export default function Session() {
   const [savedNotes, setSavedNotes] = useState({})
   const [activeTab, setActiveTab] = useState('plan')
 
+  // ── Edit mode state ──
+  const [editing, setEditing] = useState(false)
+  const [customPhases, setCustomPhases] = useState(null) // null = using defaults
+  const [hasCustomization, setHasCustomization] = useState(false)
+  const [drillPickerOpen, setDrillPickerOpen] = useState(false)
+  const [drillPickerPhase, setDrillPickerPhase] = useState(null)
+
   useEffect(() => {
     if (!session) return
     isSessionComplete(session.id).then(setCompleted)
@@ -230,7 +349,17 @@ export default function Session() {
       setSavedNotes(map)
       setNotes(map)
     })
+    // Load customizations
+    getSessionCustomization(session.id).then(cust => {
+      if (cust?.phases) {
+        setCustomPhases(cust.phases)
+        setHasCustomization(true)
+      }
+    })
   }, [session?.id])
+
+  // Resolved phases: customized or default
+  const resolvedPhases = customPhases || session?.phases || []
 
   const handleCheckPhase = async (phaseIndex) => {
     const newChecked = new Set(checkedPhases)
@@ -242,7 +371,7 @@ export default function Session() {
       await checkPhase(session.id, phaseIndex)
     }
     setCheckedPhases(newChecked)
-    if (newChecked.size === session.phases.length && !completed) {
+    if (newChecked.size === resolvedPhases.length && !completed) {
       await markSessionComplete(session.id, 'practice')
       setCompleted(true)
     }
@@ -261,6 +390,100 @@ export default function Session() {
     setSavedNotes(prev => ({ ...prev, [playerId]: text }))
   }
 
+  // ── Edit helpers ──
+  const ensureCustomPhases = () => {
+    if (!customPhases) {
+      // Deep-clone default phases into mutable state
+      return JSON.parse(JSON.stringify(session.phases))
+    }
+    return JSON.parse(JSON.stringify(customPhases))
+  }
+
+  const updateAndSave = async (newPhases) => {
+    setCustomPhases(newPhases)
+    setHasCustomization(true)
+    await saveSessionCustomization(session.id, newPhases)
+  }
+
+  const handleAddDrill = (phaseIndex) => {
+    setDrillPickerPhase(phaseIndex)
+    setDrillPickerOpen(true)
+  }
+
+  const handleDrillSelected = async (activity) => {
+    const phases = ensureCustomPhases()
+    const phase = phases[drillPickerPhase]
+    if (!phase.activities) {
+      // Convert single-activity phase to multi-activity
+      phase.activities = [{
+        name: phase.activity,
+        duration: phase.duration,
+        framework: phase.framework,
+        setup: phase.setup,
+        description: phase.description,
+        instructions: phase.instructions,
+        coachingCues: phase.coachingCues,
+      }]
+    }
+    phase.activities.push(activity)
+    // Update the summary label
+    phase.activity = phase.activities.map(a => a.name).join(' → ')
+    phase.duration = phase.activities.reduce((s, a) => s + a.duration, 0)
+    await updateAndSave(phases)
+  }
+
+  const handleRemoveActivity = async (phaseIndex, actIndex) => {
+    const phases = ensureCustomPhases()
+    const phase = phases[phaseIndex]
+    if (!phase.activities) return
+    phase.activities.splice(actIndex, 1)
+    if (phase.activities.length === 0) {
+      // Restore to original default
+      const original = session.phases[phaseIndex]
+      phases[phaseIndex] = JSON.parse(JSON.stringify(original))
+    } else {
+      phase.activity = phase.activities.map(a => a.name).join(' → ')
+      phase.duration = phase.activities.reduce((s, a) => s + a.duration, 0)
+    }
+    await updateAndSave(phases)
+  }
+
+  const handleMoveActivity = async (phaseIndex, actIndex, direction) => {
+    const phases = ensureCustomPhases()
+    const acts = phases[phaseIndex].activities
+    if (!acts) return
+    const newIndex = actIndex + direction
+    if (newIndex < 0 || newIndex >= acts.length) return
+      ;[acts[actIndex], acts[newIndex]] = [acts[newIndex], acts[actIndex]]
+    phases[phaseIndex].activity = acts.map(a => a.name).join(' → ')
+    await updateAndSave(phases)
+  }
+
+  const handleDurationChange = async (phaseIndex, actIndex, newDuration) => {
+    const phases = ensureCustomPhases()
+    const phase = phases[phaseIndex]
+    if (phase.activities) {
+      phase.activities[actIndex].duration = newDuration
+      phase.duration = phase.activities.reduce((s, a) => s + a.duration, 0)
+    } else {
+      phase.duration = newDuration
+    }
+    await updateAndSave(phases)
+  }
+
+  const handleResetPhase = async (phaseIndex) => {
+    const phases = ensureCustomPhases()
+    phases[phaseIndex] = JSON.parse(JSON.stringify(session.phases[phaseIndex]))
+    await updateAndSave(phases)
+  }
+
+  const handleResetAll = async () => {
+    setCustomPhases(null)
+    setHasCustomization(false)
+    setEditing(false)
+    await deleteSessionCustomization(session.id)
+  }
+
   if (!session) {
     return (
       <div className="text-center py-20">
@@ -272,7 +495,7 @@ export default function Session() {
   }
 
   const phasesCompleted = checkedPhases.size
-  const phasesTotal = session.phases.length
+  const phasesTotal = resolvedPhases.length
   const progressPct = Math.round((phasesCompleted / phasesTotal) * 100)
 
   return (
@@ -351,8 +574,8 @@ export default function Session() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`flex-1 py-1.5 rounded-lg text-sm font-semibold transition-all ${activeTab === tab.id
-                ? 'bg-white/10 shadow-sm text-slate-100'
-                : 'text-slate-500 hover:text-slate-300'
+              ? 'bg-white/10 shadow-sm text-slate-100'
+              : 'text-slate-500 hover:text-slate-300'
               }`}
           >
             {tab.label}
@@ -363,6 +586,30 @@ export default function Session() {
       {/* ── Tab: Session Plan ─────────────────────────── */}
       {activeTab === 'plan' && (
         <div className="space-y-3">
+          {/* Edit mode controls */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setEditing(!editing)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${editing
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5'
+                }`}
+            >
+              <Pencil size={12} /> {editing ? 'Editing' : 'Edit Session'}
+            </button>
+            {editing && hasCustomization && (
+              <button
+                onClick={handleResetAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/15 transition-colors"
+              >
+                <RotateCw size={12} /> Reset All to Default
+              </button>
+            )}
+            {hasCustomization && !editing && (
+              <span className="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-1 rounded-full font-bold">Customized</span>
+            )}
+          </div>
+
           {session.coachNotes && (
             <div className="bg-amber-500/10 border border-amber-500/15 rounded-2xl p-4">
               <p className="text-xs font-bold text-amber-400 uppercase tracking-wide mb-1">🧠 Coach Notes</p>
@@ -370,7 +617,7 @@ export default function Session() {
             </div>
           )}
 
-          {session.phases.map((phase, i) => (
+          {resolvedPhases.map((phase, i) => (
             <PhaseCard
               key={i}
               phase={phase}
@@ -379,6 +626,12 @@ export default function Session() {
               onCheck={handleCheckPhase}
               activeTimer={activeTimer}
               onTimerToggle={setActiveTimer}
+              editing={editing}
+              onAddDrill={handleAddDrill}
+              onRemoveActivity={handleRemoveActivity}
+              onMoveActivity={handleMoveActivity}
+              onDurationChange={handleDurationChange}
+              onResetPhase={handleResetPhase}
             />
           ))}
 
@@ -398,6 +651,14 @@ export default function Session() {
           )}
         </div>
       )}
+
+      {/* Drill Picker Modal */}
+      <DrillPicker
+        open={drillPickerOpen}
+        onClose={() => setDrillPickerOpen(false)}
+        onSelect={handleDrillSelected}
+        phaseName={drillPickerPhase !== null ? resolvedPhases[drillPickerPhase]?.name : ''}
+      />
 
       {/* ── Tab: Equipment ────────────────────────────── */}
       {activeTab === 'equipment' && (
@@ -471,8 +732,8 @@ export default function Session() {
               <button
                 onClick={() => handleSaveNote(player.id)}
                 className={`mt-2 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${savedNotes[player.id] === notes[player.id]
-                    ? 'text-slate-500 bg-white/5'
-                    : 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15'
+                  ? 'text-slate-500 bg-white/5'
+                  : 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15'
                   }`}
               >
                 {savedNotes[player.id] === notes[player.id] ? '✓ Saved' : 'Save Note'}

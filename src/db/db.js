@@ -4,23 +4,23 @@ import Dexie from 'dexie';
 export const db = new Dexie('U6CoachDB');
 
 db.version(1).stores({
-  // Players: 5 on roster, indexed by id
   players: '++id, name, createdAt',
-
-  // Per-session completion tracking
   sessionCompletions: '++id, sessionId, completedAt, type',
-
-  // Player session notes (written after each session)
   playerNotes: '++id, sessionId, playerId, createdAt',
-
-  // Player development scores per session (Barça HEART + Ajax TIPS)
   developmentScores: '++id, sessionId, playerId, createdAt',
-
-  // Per-session phase checkoff (track which phases are done live)
   phaseChecks: '++id, sessionId, phaseIndex, checkedAt',
-
-  // App settings (API keys, preferences)
   settings: 'key',
+});
+
+db.version(2).stores({
+  players: '++id, name, createdAt',
+  sessionCompletions: '++id, sessionId, completedAt, type',
+  playerNotes: '++id, sessionId, playerId, createdAt',
+  developmentScores: '++id, sessionId, playerId, createdAt',
+  phaseChecks: '++id, sessionId, phaseIndex, checkedAt',
+  settings: 'key',
+  // Session activity customizations — overrides default phase content
+  sessionCustomizations: 'sessionId',
 });
 
 // ─── Default Players ───────────────────────────────────────────────────────────
@@ -182,9 +182,26 @@ export async function setSetting(key, value) {
   await db.settings.put({ key, value });
 }
 
+// ─── Session Customization Operations ─────────────────────────────────────────
+export async function getSessionCustomization(sessionId) {
+  return db.sessionCustomizations.get(sessionId);
+}
+
+export async function saveSessionCustomization(sessionId, phases) {
+  await db.sessionCustomizations.put({
+    sessionId,
+    phases,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function deleteSessionCustomization(sessionId) {
+  await db.sessionCustomizations.delete(sessionId);
+}
+
 // ─── Export / Import ───────────────────────────────────────────────────────────
 export async function exportData() {
-  const [players, completions, notes, scores, phases, settingsAll] =
+  const [players, completions, notes, scores, phases, settingsAll, customizations] =
     await Promise.all([
       db.players.toArray(),
       db.sessionCompletions.toArray(),
@@ -192,23 +209,25 @@ export async function exportData() {
       db.developmentScores.toArray(),
       db.phaseChecks.toArray(),
       db.settings.toArray(),
+      db.sessionCustomizations.toArray(),
     ]);
   return {
     exportedAt: new Date().toISOString(),
-    version: 1,
+    version: 2,
     players,
     completions,
     notes,
     scores,
     phases,
     settings: settingsAll,
+    sessionCustomizations: customizations,
   };
 }
 
 export async function importData(data) {
   await db.transaction(
     'rw',
-    [db.players, db.sessionCompletions, db.playerNotes, db.developmentScores, db.phaseChecks, db.settings],
+    [db.players, db.sessionCompletions, db.playerNotes, db.developmentScores, db.phaseChecks, db.settings, db.sessionCustomizations],
     async () => {
       if (data.players?.length) {
         await db.players.clear();
@@ -233,6 +252,10 @@ export async function importData(data) {
       if (data.settings?.length) {
         await db.settings.clear();
         await db.settings.bulkAdd(data.settings);
+      }
+      if (data.sessionCustomizations?.length) {
+        await db.sessionCustomizations.clear();
+        await db.sessionCustomizations.bulkAdd(data.sessionCustomizations);
       }
     }
   );
