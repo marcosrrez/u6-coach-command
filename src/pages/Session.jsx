@@ -590,19 +590,19 @@ export default function Session() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setEditing(!editing)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${editing
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${editing
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5'
+                : 'bg-white/10 text-slate-200 border border-white/15 hover:bg-white/15 active:scale-95'
                 }`}
             >
-              <Pencil size={12} /> {editing ? 'Editing' : 'Edit Session'}
+              <Pencil size={13} /> {editing ? 'Done Editing' : 'Edit Session'}
             </button>
             {editing && hasCustomization && (
               <button
                 onClick={handleResetAll}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/15 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/15 transition-colors"
               >
-                <RotateCw size={12} /> Reset All to Default
+                <RotateCw size={12} /> Reset
               </button>
             )}
             {hasCustomization && !editing && (
