@@ -1,5 +1,6 @@
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
-import { Home, Calendar, BookOpen, Users, MessageCircle, Settings, Dumbbell } from 'lucide-react'
+import { Outlet, NavLink } from 'react-router-dom'
+import { Home, Calendar, BookOpen, Users, Settings, Dumbbell } from 'lucide-react'
+import AIFloating from './AIFloating'
 
 const NAV_ITEMS = [
   { to: '/', icon: Home, label: 'Home' },
@@ -7,7 +8,6 @@ const NAV_ITEMS = [
   { to: '/drills', icon: Dumbbell, label: 'Drills' },
   { to: '/philosophy', icon: BookOpen, label: 'Philosophy' },
   { to: '/players', icon: Users, label: 'Players' },
-  { to: '/ai', icon: MessageCircle, label: 'AI Coach' },
 ]
 
 export default function Layout() {
@@ -38,6 +38,9 @@ export default function Layout() {
       <main className="flex-1 pb-24 px-4 py-4 overflow-y-auto animate-fade-in">
         <Outlet />
       </main>
+
+      {/* ── Floating AI ──────────────────────────────────── */}
+      <AIFloating />
 
       {/* ── Bottom navigation ────────────────────────────── */}
       <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-2xl z-50 glass-nav nav-safe">
