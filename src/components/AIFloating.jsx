@@ -463,12 +463,12 @@ export default function AIFloating() {
     <>
       {/* Backdrop */}
       {open && (
-        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={() => setOpen(false)} />
+        <div className="fixed inset-0 z-[55] bg-black/50 backdrop-blur-sm" onClick={() => setOpen(false)} />
       )}
 
       {/* Slide-up panel */}
       <div
-        className={`fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-2xl z-50 transition-transform duration-300 ease-out ${open ? 'translate-y-0' : 'translate-y-full'}`}
+        className={`fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-2xl z-[60] transition-transform duration-300 ease-out ${open ? 'translate-y-0' : 'translate-y-full'}`}
       >
         <div className="bg-[#0d1117] border border-white/10 rounded-t-3xl shadow-2xl flex flex-col" style={{ height: '78vh' }}>
 
