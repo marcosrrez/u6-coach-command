@@ -12,6 +12,7 @@ import {
   getCheckedPhases, checkPhase, uncheckPhase,
   getSessionNotes, savePlayerNote, getPlayers,
   getSessionCustomization, saveSessionCustomization, deleteSessionCustomization,
+  checkActivity, uncheckActivity, getCheckedActivities,
 } from '../db/db'
 import DrillPicker from '../components/DrillPicker'
 
@@ -24,7 +25,7 @@ const FRAMEWORK_COLORS = {
   Universal: 'bg-slate-500/20 text-slate-300',
 }
 
-// ─── Timer component ──────────────────────────────────────────────────────────
+// ─── Timer component (single-activity phases) ────────────────────────────────
 function PhaseTimer({ durationMin, running, onComplete }) {
   const totalSec = durationMin * 60
   const [remaining, setRemaining] = useState(totalSec)
@@ -105,6 +106,160 @@ function PhaseTimer({ durationMin, running, onComplete }) {
   )
 }
 
+// ─── Segmented Timer (multi-activity phases) ──────────────────────────────────
+function SegmentedPhaseTimer({ activities, running, onComplete, onSegmentComplete }) {
+  const segments = activities.map(a => a.duration * 60) // seconds per segment
+  const totalSec = segments.reduce((s, v) => s + v, 0)
+  const [currentSegment, setCurrentSegment] = useState(0)
+  const [segRemaining, setSegRemaining] = useState(segments[0] || 0)
+  const [started, setStarted] = useState(false)
+  const [completedSegments, setCompletedSegments] = useState(new Set())
+  const interval = useRef(null)
+
+  // Reset when activities change
+  useEffect(() => {
+    setCurrentSegment(0)
+    setSegRemaining(segments[0] || 0)
+    setStarted(false)
+    setCompletedSegments(new Set())
+  }, [activities.length, totalSec])
+
+  useEffect(() => {
+    if (running && started) {
+      interval.current = setInterval(() => {
+        setSegRemaining(prev => {
+          if (prev <= 1) {
+            // Segment done
+            setCompletedSegments(cs => {
+              const next = new Set(cs)
+              next.add(currentSegment)
+              return next
+            })
+            onSegmentComplete?.(currentSegment)
+            // Move to next segment
+            if (currentSegment < segments.length - 1) {
+              const nextSeg = currentSegment + 1
+              setCurrentSegment(nextSeg)
+              return segments[nextSeg]
+            } else {
+              // All segments done
+              clearInterval(interval.current)
+              onComplete?.()
+              return 0
+            }
+          }
+          return prev - 1
+        })
+      }, 1000)
+    } else {
+      clearInterval(interval.current)
+    }
+    return () => clearInterval(interval.current)
+  }, [running, started, currentSegment, segments.length])
+
+  const mm = String(Math.floor(segRemaining / 60)).padStart(2, '0')
+  const ss = String(segRemaining % 60).padStart(2, '0')
+  const segTotal = segments[currentSegment] || 1
+  const segProgress = ((segTotal - segRemaining) / segTotal) * 100
+  const isUrgent = segRemaining <= 30 && segRemaining > 0 && started
+  const allDone = completedSegments.size === segments.length
+
+  // Calculate overall progress
+  const elapsedTotal = segments.slice(0, currentSegment).reduce((s, v) => s + v, 0) + (segTotal - segRemaining)
+  const overallProgress = totalSec > 0 ? (elapsedTotal / totalSec) * 100 : 0
+
+  const handleStart = () => { setStarted(true) }
+  const handleReset = () => {
+    setCurrentSegment(0)
+    setSegRemaining(segments[0] || 0)
+    setStarted(false)
+    setCompletedSegments(new Set())
+  }
+
+  return (
+    <div className={`rounded-2xl p-4 transition-colors duration-300 ${isUrgent ? 'bg-red-500/10 border border-red-500/20' : 'bg-emerald-500/10 border border-emerald-500/15'}`}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-300">
+          <Timer size={15} />
+          <span>Session Timer</span>
+        </div>
+        <button
+          onClick={handleReset}
+          className="p-1.5 rounded-lg hover:bg-white/10 text-slate-500 transition-colors"
+        >
+          <RotateCcw size={14} />
+        </button>
+      </div>
+
+      {/* Current activity label */}
+      {started && !allDone && (
+        <div className="mb-2">
+          <p className="text-xs text-slate-500 uppercase tracking-wide font-bold">Now Playing</p>
+          <p className="text-sm font-bold text-slate-200 truncate">
+            {activities[currentSegment]?.name}
+            <span className="text-slate-500 font-normal ml-2">
+              ({currentSegment + 1} of {segments.length})
+            </span>
+          </p>
+        </div>
+      )}
+
+      {/* Segmented progress bar */}
+      <div className="flex gap-1 mb-2">
+        {segments.map((segSec, i) => {
+          const widthPct = (segSec / totalSec) * 100
+          const isDone = completedSegments.has(i)
+          const isCurrent = i === currentSegment && started && !allDone
+          return (
+            <div
+              key={i}
+              className="relative rounded-full h-3 overflow-hidden bg-white/5"
+              style={{ width: `${widthPct}%` }}
+              title={`${activities[i]?.name} — ${Math.round(segSec / 60)} min`}
+            >
+              <div
+                className={`absolute inset-y-0 left-0 rounded-full transition-all duration-1000
+                  ${isDone ? 'bg-emerald-500' : isCurrent ? (isUrgent ? 'bg-red-500' : 'bg-emerald-400 animate-pulse') : 'bg-white/5'}
+                `}
+                style={{ width: isDone ? '100%' : isCurrent ? `${segProgress}%` : '0%' }}
+              />
+              {/* Segment label */}
+              <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white/60 pointer-events-none">
+                {Math.round(segSec / 60)}m
+              </span>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Overall progress text */}
+      <div className="flex justify-between text-[10px] text-slate-500 mb-3">
+        <span>{Math.floor(elapsedTotal / 60)}:{String(elapsedTotal % 60).padStart(2, '0')} elapsed</span>
+        <span>{Math.floor((totalSec - elapsedTotal) / 60)}:{String((totalSec - elapsedTotal) % 60).padStart(2, '0')} remaining</span>
+      </div>
+
+      {/* Current segment countdown */}
+      <div className="flex items-center justify-between">
+        <span className={`timer-display font-display font-black text-4xl ${isUrgent ? 'text-red-400' : 'text-slate-100'}`}>
+          {allDone ? '00:00' : `${mm}:${ss}`}
+        </span>
+        {!started ? (
+          <button
+            onClick={handleStart}
+            className="flex items-center gap-2 gradient-emerald text-white px-4 py-2 rounded-xl font-semibold text-sm hover:opacity-90 transition-opacity active:scale-95"
+          >
+            <Play size={14} fill="white" /> Start
+          </button>
+        ) : (
+          <p className={`text-xs font-medium ${isUrgent ? 'text-red-400' : 'text-emerald-400'}`}>
+            {allDone ? '✅ All Done!' : isUrgent ? '⚠️ Next up soon!' : '⏱ Running'}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Activity content block (shared by single-activity and multi-activity) ────
 function ActivityContent({ activity }) {
   return (
@@ -153,20 +308,27 @@ function ActivityContent({ activity }) {
 }
 
 // ─── Sub-activity card (for multi-activity phases) ────────────────────────────
-function SubActivityCard({ activity, index, total, editing, onRemove, onMoveUp, onMoveDown, onDurationChange }) {
+function SubActivityCard({ activity, index, total, editing, checked, onCheck, onRemove, onMoveUp, onMoveDown, onDurationChange }) {
   const [open, setOpen] = useState(index === 0)
 
   return (
-    <div className="border border-white/5 rounded-xl overflow-hidden">
-      <button
+    <div className={`border rounded-xl overflow-hidden transition-all duration-200 ${checked ? 'border-emerald-500/20 opacity-60' : 'border-white/5'}`}>
+      <div
+        className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors cursor-pointer"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
       >
-        <span className="flex-shrink-0 w-6 h-6 bg-emerald-500/20 text-emerald-400 rounded-full text-xs font-bold flex items-center justify-center">
-          {index + 1}
-        </span>
+        {/* Activity checkbox */}
+        <button
+          onClick={e => { e.stopPropagation(); onCheck?.(index) }}
+          className="flex-shrink-0"
+        >
+          {checked
+            ? <CheckCircle2 size={18} className="text-emerald-400" />
+            : <Circle size={18} className="text-slate-600 hover:text-slate-400 transition-colors" />
+          }
+        </button>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-slate-200">{activity.name}</p>
+          <p className={`text-sm font-semibold ${checked ? 'text-slate-400 line-through' : 'text-slate-200'}`}>{activity.name}</p>
           {activity.framework && (
             <p className="text-[10px] text-slate-500 uppercase tracking-wide">{activity.framework}</p>
           )}
@@ -185,7 +347,7 @@ function SubActivityCard({ activity, index, total, editing, onRemove, onMoveUp, 
           <span className="text-xs text-slate-500 flex-shrink-0">{activity.duration} min</span>
         )}
         {open ? <ChevronUp size={12} className="text-slate-500" /> : <ChevronDown size={12} className="text-slate-500" />}
-      </button>
+      </div>
       {open && (
         <div className="px-3 pb-3 border-t border-white/5 pt-3">
           <ActivityContent activity={activity} />
@@ -196,11 +358,16 @@ function SubActivityCard({ activity, index, total, editing, onRemove, onMoveUp, 
 }
 
 // ─── Phase card ───────────────────────────────────────────────────────────────
-function PhaseCard({ phase, phaseIndex, checked, onCheck, activeTimer, onTimerToggle, editing, onAddDrill, onRemoveActivity, onMoveActivity, onDurationChange, onResetPhase }) {
+function PhaseCard({ phase, phaseIndex, checked, onCheck, activeTimer, onTimerToggle, editing, onAddDrill, onRemoveActivity, onMoveActivity, onDurationChange, onResetPhase, checkedActivities, onCheckActivity }) {
   const [expanded, setExpanded] = useState(phaseIndex === 0)
   const isActive = activeTimer === phaseIndex
   const hasActivities = phase.activities?.length > 0
   const totalDuration = hasActivities ? phase.activities.reduce((s, a) => s + a.duration, 0) : phase.duration
+
+  // Count checked activities in this phase
+  const checkedActCount = hasActivities
+    ? phase.activities.filter((_, i) => checkedActivities?.has(`${phaseIndex}-${i}`)).length
+    : 0
 
   return (
     <div className={`glass-card-solid transition-all duration-200 overflow-hidden
@@ -228,7 +395,7 @@ function PhaseCard({ phase, phaseIndex, checked, onCheck, activeTimer, onTimerTo
             <span className="text-xs text-slate-500">{totalDuration} min</span>
             {hasActivities && (
               <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-bold">
-                {phase.activities.length} activities
+                {checkedActCount}/{phase.activities.length}
               </span>
             )}
           </div>
@@ -247,11 +414,25 @@ function PhaseCard({ phase, phaseIndex, checked, onCheck, activeTimer, onTimerTo
       {expanded && (
         <div className="px-4 pb-4 space-y-4 border-t border-white/5">
           <div className="pt-3">
-            <PhaseTimer
-              durationMin={totalDuration}
-              running={isActive}
-              onComplete={() => onTimerToggle(null)}
-            />
+            {hasActivities ? (
+              <SegmentedPhaseTimer
+                activities={phase.activities}
+                running={isActive}
+                onComplete={() => onTimerToggle(null)}
+                onSegmentComplete={(segIdx) => {
+                  // Auto-check the completed activity
+                  if (!checkedActivities?.has(`${phaseIndex}-${segIdx}`)) {
+                    onCheckActivity?.(phaseIndex, segIdx)
+                  }
+                }}
+              />
+            ) : (
+              <PhaseTimer
+                durationMin={totalDuration}
+                running={isActive}
+                onComplete={() => onTimerToggle(null)}
+              />
+            )}
             <button
               onClick={() => onTimerToggle(isActive ? null : phaseIndex)}
               className={`mt-2 w-full py-2 rounded-xl font-semibold text-sm transition-all ${isActive
@@ -273,6 +454,8 @@ function PhaseCard({ phase, phaseIndex, checked, onCheck, activeTimer, onTimerTo
                   index={i}
                   total={phase.activities.length}
                   editing={editing}
+                  checked={checkedActivities?.has(`${phaseIndex}-${i}`)}
+                  onCheck={() => onCheckActivity?.(phaseIndex, i)}
                   onRemove={() => onRemoveActivity(phaseIndex, i)}
                   onMoveUp={() => onMoveActivity(phaseIndex, i, -1)}
                   onMoveDown={() => onMoveActivity(phaseIndex, i, 1)}
@@ -325,6 +508,7 @@ export default function Session() {
 
   const [completed, setCompleted] = useState(false)
   const [checkedPhases, setCheckedPhases] = useState(new Set())
+  const [checkedActs, setCheckedActs] = useState(new Map())
   const [activeTimer, setActiveTimer] = useState(null)
   const [players, setPlayers] = useState([])
   const [notes, setNotes] = useState({})
@@ -342,6 +526,7 @@ export default function Session() {
     if (!session) return
     isSessionComplete(session.id).then(setCompleted)
     getCheckedPhases(session.id).then(setCheckedPhases)
+    getCheckedActivities(session.id).then(setCheckedActs)
     getPlayers().then(setPlayers)
     getSessionNotes(session.id).then(noteList => {
       const map = {}
@@ -374,6 +559,31 @@ export default function Session() {
     if (newChecked.size === resolvedPhases.length && !completed) {
       await markSessionComplete(session.id, 'practice')
       setCompleted(true)
+    }
+  }
+
+  const handleCheckActivity = async (phaseIndex, actIndex) => {
+    const key = `${phaseIndex}-${actIndex}`
+    const newMap = new Map(checkedActs)
+    if (newMap.has(key)) {
+      newMap.delete(key)
+      await uncheckActivity(session.id, phaseIndex, actIndex)
+    } else {
+      newMap.set(key, true)
+      await checkActivity(session.id, phaseIndex, actIndex)
+    }
+    setCheckedActs(newMap)
+
+    // Auto-check the phase if all its activities are now checked
+    const phase = resolvedPhases[phaseIndex]
+    if (phase?.activities?.length > 0) {
+      const allChecked = phase.activities.every((_, i) => {
+        const k = `${phaseIndex}-${i}`
+        return newMap.has(k)
+      })
+      if (allChecked && !checkedPhases.has(phaseIndex)) {
+        handleCheckPhase(phaseIndex)
+      }
     }
   }
 
@@ -632,6 +842,8 @@ export default function Session() {
               onMoveActivity={handleMoveActivity}
               onDurationChange={handleDurationChange}
               onResetPhase={handleResetPhase}
+              checkedActivities={checkedActs}
+              onCheckActivity={handleCheckActivity}
             />
           ))}
 

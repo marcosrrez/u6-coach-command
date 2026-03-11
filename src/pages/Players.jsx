@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Edit2, Check, X } from 'lucide-react'
+import { Edit2, Check, X, Plus, Trash2, UserPlus } from 'lucide-react'
 import {
-  getPlayers, updatePlayer,
+  getPlayers, updatePlayer, addPlayer, deletePlayer,
   getPlayerNotes, getPlayerScores,
 } from '../db/db'
 import { PRACTICES } from '../data/sessions'
@@ -38,12 +38,13 @@ function ScoreBar({ value, maxValue = 5, color = 'bg-emerald-500' }) {
   )
 }
 
-function PlayerCard({ player, onUpdate }) {
+function PlayerCard({ player, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState({ name: player.name, emoji: player.emoji, color: player.color })
   const [notes, setNotes] = useState([])
   const [scores, setScores] = useState([])
   const [tab, setTab] = useState('profile')
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
     getPlayerNotes(player.id).then(setNotes)
@@ -54,6 +55,11 @@ function PlayerCard({ player, onUpdate }) {
     await updatePlayer(player.id, draft)
     onUpdate({ ...player, ...draft })
     setEditing(false)
+  }
+
+  const handleDelete = async () => {
+    await deletePlayer(player.id)
+    onDelete(player.id)
   }
 
   const avgScores = scores.length === 0 ? {} : (() => {
@@ -139,13 +145,36 @@ function PlayerCard({ player, onUpdate }) {
                 </button>
               </>
             ) : (
-              <button onClick={() => { setEditing(true); setDraft({ name: player.name, emoji: player.emoji, color: player.color }) }}
-                className="p-2 rounded-xl text-slate-500 hover:bg-white/5 hover:text-slate-300 transition-colors">
-                <Edit2 size={14} />
-              </button>
+              <>
+                <button onClick={() => { setEditing(true); setDraft({ name: player.name, emoji: player.emoji, color: player.color }) }}
+                  className="p-2 rounded-xl text-slate-500 hover:bg-white/5 hover:text-slate-300 transition-colors">
+                  <Edit2 size={14} />
+                </button>
+                <button onClick={() => setConfirmDelete(true)}
+                  className="p-2 rounded-xl text-slate-600 hover:bg-red-500/10 hover:text-red-400 transition-colors">
+                  <Trash2 size={14} />
+                </button>
+              </>
             )}
           </div>
         </div>
+
+        {/* Delete confirmation */}
+        {confirmDelete && (
+          <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-xl p-3 flex items-center justify-between">
+            <p className="text-xs text-red-300">Delete <strong>{player.name}</strong> and all their data?</p>
+            <div className="flex gap-2">
+              <button onClick={handleDelete}
+                className="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-400 text-xs font-semibold hover:bg-red-500/30 transition-colors">
+                Delete
+              </button>
+              <button onClick={() => setConfirmDelete(false)}
+                className="px-3 py-1.5 rounded-lg bg-white/5 text-slate-400 text-xs font-semibold hover:bg-white/10 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex border-t border-white/5">
@@ -229,6 +258,10 @@ function PlayerCard({ player, onUpdate }) {
 
 export default function Players() {
   const [players, setPlayers] = useState([])
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newEmoji, setNewEmoji] = useState('⚽')
+  const [newColor, setNewColor] = useState('#16a34a')
 
   useEffect(() => {
     getPlayers().then(setPlayers)
@@ -238,12 +271,81 @@ export default function Players() {
     setPlayers(prev => prev.map(p => p.id === updated.id ? updated : p))
   }
 
+  const handleDeletePlayer = (id) => {
+    setPlayers(prev => prev.filter(p => p.id !== id))
+  }
+
+  const handleAddPlayer = async () => {
+    if (!newName.trim()) return
+    const id = await addPlayer({ name: newName.trim(), emoji: newEmoji, color: newColor })
+    const refreshed = await getPlayers()
+    setPlayers(refreshed)
+    setNewName('')
+    setNewEmoji('⚽')
+    setNewColor('#16a34a')
+    setAdding(false)
+  }
+
   return (
     <div className="space-y-4 animate-fade-in">
-      <div>
-        <h1 className="font-display font-black text-2xl text-slate-100">My Players</h1>
-        <p className="text-slate-500 text-sm">{players.length} athletes · Tap to edit name & emoji</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-display font-black text-2xl text-slate-100">My Players</h1>
+          <p className="text-slate-500 text-sm">{players.length} athletes · Tap to edit or delete</p>
+        </div>
+        <button
+          onClick={() => setAdding(!adding)}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all active:scale-95 ${adding
+              ? 'bg-red-500/10 text-red-400 border border-red-500/20'
+              : 'gradient-emerald text-white hover:opacity-90'
+            }`}
+        >
+          {adding ? <><X size={14} /> Cancel</> : <><UserPlus size={14} /> Add Player</>}
+        </button>
       </div>
+
+      {/* Add player form */}
+      {adding && (
+        <div className="glass-card-solid p-4 space-y-3 border-2 border-emerald-500/20">
+          <p className="text-xs font-bold text-emerald-400 uppercase tracking-widest">New Player</p>
+          <input
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            placeholder="Player name"
+            autoFocus
+            className="w-full glass-input px-3 py-2.5 text-sm font-semibold text-slate-100"
+            onKeyDown={e => e.key === 'Enter' && handleAddPlayer()}
+          />
+          <div>
+            <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Emoji</p>
+            <div className="flex gap-1 flex-wrap">
+              {PLAYER_EMOJIS.map(e => (
+                <button key={e} onClick={() => setNewEmoji(e)}
+                  className={`text-lg p-1.5 rounded-lg ${newEmoji === e ? 'bg-emerald-500/20 ring-2 ring-emerald-500/40' : 'hover:bg-white/5'}`}>
+                  {e}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Color</p>
+            <div className="flex gap-1.5 flex-wrap">
+              {PLAYER_COLORS.map(c => (
+                <button key={c} onClick={() => setNewColor(c)}
+                  className={`w-7 h-7 rounded-full transition-all ${newColor === c ? 'ring-2 ring-offset-2 ring-offset-slate-800 ring-slate-400 scale-110' : ''}`}
+                  style={{ backgroundColor: c }} />
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={handleAddPlayer}
+            disabled={!newName.trim()}
+            className="w-full gradient-emerald text-white font-semibold py-2.5 rounded-xl text-sm hover:opacity-90 transition-opacity active:scale-95 disabled:opacity-40"
+          >
+            <span className="flex items-center justify-center gap-2"><Plus size={14} /> Add to Roster</span>
+          </button>
+        </div>
+      )}
 
       <div className="glass-card-solid p-4">
         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">📊 Tracking Models</p>
@@ -262,12 +364,13 @@ export default function Players() {
       {players.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-4xl mb-2">👥</p>
-          <p className="font-semibold text-slate-400">Loading players...</p>
+          <p className="font-semibold text-slate-400">No players yet</p>
+          <p className="text-sm text-slate-600 mt-1">Tap "Add Player" to get started!</p>
         </div>
       ) : (
         <div className="space-y-3">
           {players.map(player => (
-            <PlayerCard key={player.id} player={player} onUpdate={handleUpdatePlayer} />
+            <PlayerCard key={player.id} player={player} onUpdate={handleUpdatePlayer} onDelete={handleDeletePlayer} />
           ))}
         </div>
       )}

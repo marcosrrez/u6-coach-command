@@ -6,9 +6,9 @@ import { DRILLS } from '../data/drills'
 import { PRACTICES, GAMES, SEASON_INFO } from '../data/sessions'
 import {
     getPlayers, getCustomDrills, addCustomDrill, deleteCustomDrill,
-    getPlayerNotes, savePlayerNote, getPlayerScores,
+    getPlayerNotes, savePlayerNote, getPlayerScores, saveDevelopmentScore,
     getCompletedSessionIds, getSessionCustomization, saveSessionCustomization,
-    markSessionComplete,
+    markSessionComplete, addPlayer, deletePlayer,
 } from '../db/db'
 
 // ─── Tool Definitions (sent to Groq) ──────────────────────────────────────────
@@ -182,6 +182,75 @@ export const TOOL_DEFINITIONS = [
             name: 'get_season_overview',
             description: 'Get the full season schedule showing all 16 practices and 8 games, including which sessions are completed and upcoming dates.',
             parameters: { type: 'object', properties: {} },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'add_player',
+            description: 'Add a new player to the team roster. Use when the coach asks to add, create, or register a new player.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    name: { type: 'string', description: 'Player name' },
+                    emoji: { type: 'string', description: 'Emoji icon for the player (e.g. ⚽, 🌟, 🦁)' },
+                    color: { type: 'string', description: 'Hex color for the player (e.g. #16a34a)' },
+                    jerseyNumber: { type: 'integer', description: 'Jersey number (auto-assigned if omitted)' },
+                },
+                required: ['name'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'delete_player',
+            description: 'Remove a player from the roster and delete all their associated notes and scores. Use when the coach asks to remove or delete a player.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    playerId: { type: 'integer', description: 'ID of the player to remove (get IDs from get_players)' },
+                },
+                required: ['playerId'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'score_player',
+            description: 'Save HEART (Humility, Effort, Ambition, Respect, Teamwork) and/or TIPS (Technique, Insight, Personality, Speed) development scores for a player on a specific session. Each score is 1–5. Use when the coach gives feedback on a player\'s performance.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    playerId: { type: 'integer', description: 'Player ID' },
+                    sessionNumber: { type: 'integer', description: 'Practice session number (1–16)' },
+                    humility: { type: 'integer', minimum: 1, maximum: 5 },
+                    effort: { type: 'integer', minimum: 1, maximum: 5 },
+                    ambition: { type: 'integer', minimum: 1, maximum: 5 },
+                    respect: { type: 'integer', minimum: 1, maximum: 5 },
+                    teamwork: { type: 'integer', minimum: 1, maximum: 5 },
+                    technique: { type: 'integer', minimum: 1, maximum: 5 },
+                    insight: { type: 'integer', minimum: 1, maximum: 5 },
+                    personality: { type: 'integer', minimum: 1, maximum: 5 },
+                    speed: { type: 'integer', minimum: 1, maximum: 5 },
+                },
+                required: ['playerId', 'sessionNumber'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'search_drills',
+            description: 'Search the drill library by keyword. Matches against drill names, descriptions, and categories. Use when the coach asks to find a drill or wants drill recommendations.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'Search keyword (e.g. "dribbling", "warm-up", "pirate")' },
+                },
+                required: ['query'],
+            },
         },
     },
 ]
@@ -362,6 +431,67 @@ export async function executeTool(toolName, args) {
             }
         }
 
+        case 'add_player': {
+            const id = await addPlayer({
+                name: args.name,
+                emoji: args.emoji || '⚽',
+                color: args.color || '#16a34a',
+                jerseyNumber: args.jerseyNumber,
+            })
+            const players = await getPlayers()
+            const newPlayer = players.find(p => p.id === id)
+            return {
+                success: true,
+                message: `Added ${args.name} to the roster! (Jersey #${newPlayer?.jerseyNumber || '?'})`,
+                player: newPlayer,
+            }
+        }
+
+        case 'delete_player': {
+            const players = await getPlayers()
+            const player = players.find(p => p.id === args.playerId)
+            if (!player) return { error: `Player with ID ${args.playerId} not found.` }
+            await deletePlayer(args.playerId)
+            return { success: true, message: `Removed ${player.name} (#${player.jerseyNumber}) from the roster.` }
+        }
+
+        case 'score_player': {
+            const session = PRACTICES.find(p => p.sessionNumber === args.sessionNumber)
+            if (!session) return { error: `Session ${args.sessionNumber} not found.` }
+            const scores = {}
+            const scoreKeys = ['humility', 'effort', 'ambition', 'respect', 'teamwork', 'technique', 'insight', 'personality', 'speed']
+            scoreKeys.forEach(k => { if (args[k] !== undefined) scores[k] = args[k] })
+            if (Object.keys(scores).length === 0) return { error: 'No scores provided.' }
+            await saveDevelopmentScore(session.id, args.playerId, scores)
+            return {
+                success: true,
+                message: `Saved ${Object.keys(scores).length} score(s) for player ${args.playerId} on session ${args.sessionNumber}.`,
+                scores,
+            }
+        }
+
+        case 'search_drills': {
+            const q = (args.query || '').toLowerCase()
+            const customDrills = await getCustomDrills()
+            const allDrills = [...DRILLS, ...customDrills.map(d => ({ ...d, id: `custom-${d.id}`, isCustom: true }))]
+            const matches = allDrills.filter(d =>
+                d.name?.toLowerCase().includes(q) ||
+                d.description?.toLowerCase().includes(q) ||
+                d.category?.toLowerCase().includes(q) ||
+                d.instructions?.some(inst => inst.toLowerCase().includes(q))
+            )
+            return {
+                query: args.query,
+                matchCount: matches.length,
+                drills: matches.slice(0, 10).map(d => ({
+                    id: d.id, name: d.name, category: d.category,
+                    framework: d.framework, duration: d.duration,
+                    description: d.description?.slice(0, 120) + (d.description?.length > 120 ? '...' : ''),
+                    isCustom: !!d.isCustom,
+                })),
+            }
+        }
+
         default:
             return { error: `Unknown tool: ${toolName}` }
     }
@@ -376,7 +506,7 @@ export async function buildSystemPrompt() {
     const nextSession = PRACTICES.find(p => !completed.has(p.id))
     const completedCount = PRACTICES.filter(p => completed.has(p.id)).length
 
-    return `You are Coach AI — an expert U-6 soccer coaching assistant with FULL ACCESS to this team's coaching system. You can read and modify sessions, drills, player data, and the entire season plan.
+    return `You are Coach AI — an expert U-6 soccer coaching assistant with FULL ACCESS to this team's coaching system. You can read and modify sessions, drills, player data, scores, and the entire season plan.
 
 ## Your Coaching Frameworks
 1. **FC Barcelona (Barça)**: HEART values, Rondo, 3-Second Rule, Dynamic Systems Theory
@@ -386,22 +516,32 @@ export async function buildSystemPrompt() {
 5. **Horst Wein / Funino**: 4-goal field, 3v3 format, coach questions only at stoppages
 
 ## Team Context
-- ${players.length} players: ${players.map(p => `${p.emoji} ${p.name} (#${p.jerseyNumber})`).join(', ')}
+- ${players.length} players: ${players.map(p => `${p.emoji} ${p.name} (#${p.jerseyNumber}, ID:${p.id})`).join(', ')}
 - Ages 5–6, practices Tue/Thu, games Saturday, 45-min sessions
 - Season progress: ${completedCount}/${PRACTICES.length} practices completed
 ${nextSession ? `- Next session: Practice ${nextSession.sessionNumber} — "${nextSession.title}" (${nextSession.date})` : '- All sessions completed!'}
 - Drill library: ${DRILLS.length + customDrills.length} drills (${customDrills.length} custom AI-created)
 
 ## Your Capabilities (Tools)
-You have tools to:
-- **Create new drills** → adds to the library automatically
-- **Draw field diagrams** → visualize drill setups and formations on a mini soccer field. Use proactively when explaining spatial concepts.
-- **Mark sessions complete** → record when a practice or game is done
-- **Read session plans** → see full details of any practice
-- **Modify session plans** → add/remove drills from phases
+You have powerful tools to manage the entire coaching system:
+- **Create drills** → invent new drills, auto-added to library
+- **Search drills** → find drills by keyword, category, or theme
+- **Draw field diagrams** → visualize drill setups on a mini soccer field
+- **Read/modify session plans** → view and edit practice phases
+- **Mark sessions complete** → track season progress
+- **Add/delete players** → manage the team roster
 - **Read player info** → see roster, notes, development scores
 - **Save player notes** → record observations after sessions
-- **View season overview** → see full schedule and completion status
+- **Score players** → save HEART and TIPS development scores (1–5)
+- **View season overview** → see full schedule and progress
+
+## Proactive Behaviors
+- When the coach mentions a player performing well or poorly, PROACTIVELY offer to save a development note or score.
+- When discussing a drill, PROACTIVELY draw a field diagram to visualize it.
+- When the coach asks about drills, SEARCH the library first before suggesting.
+- You CAN chain multiple tools in one response. For example: search drills → add best match to a session → draw the field diagram.
+- When creating a drill, ALWAYS also draw a field diagram showing the setup.
+- When the coach says "we just finished practice", mark it complete AND ask if they want to record player notes.
 
 ## Rules
 - Be warm, encouraging, practical. You're talking to a volunteer parent-coach.
@@ -409,5 +549,7 @@ You have tools to:
 - When creating drills: age-appropriate for 5-6 year olds, story-based, max 8 min.
 - When modifying sessions: explain what you changed and why.
 - Joy and play are the PRIORITY. Every child succeeds every session.
-- Use tools proactively when the coach's question involves app data.`
+- Use tools proactively when the coach's question involves app data.
+- Always include player IDs when referencing players so you can take action on them.`
 }
+

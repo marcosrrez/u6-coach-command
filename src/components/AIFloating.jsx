@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { Bot, Send, Loader2, AlertCircle, User, Wrench, Sparkles, ChevronDown, Settings, Trash2 } from 'lucide-react'
 import { getSetting, setSetting } from '../db/db'
 import { TOOL_DEFINITIONS, executeTool, buildSystemPrompt } from '../ai/aiTools'
+import { callAI, getGeminiKey } from '../ai/aiService'
 import { PRACTICES, GAMES } from '../data/sessions'
 
 // ─── Page badge (small chip shown in panel header) ───────────────────────────
@@ -88,6 +89,7 @@ function getPageContext(pathname) {
       text: 'User is on the players/roster page.',
       quickPrompts: [
         { label: '👥 Roster', text: 'List all my players with their details.' },
+        { label: '➕ Add player', text: 'Add a new player to my roster.' },
         { label: '📈 Development', text: 'How is each player developing this season?' },
         { label: '📝 Save note', text: 'I want to record a development note for a player.' },
       ],
@@ -267,6 +269,8 @@ export default function AIFloating() {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [apiKey, setApiKey] = useState(null)
+  const [geminiKey, setGeminiKey] = useState(null)
+  const [activeProvider, setActiveProvider] = useState(null)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -283,6 +287,7 @@ export default function AIFloating() {
       const resolved = key || import.meta.env.VITE_GROQ_API_KEY || null
       setApiKey(resolved)
     })
+    setGeminiKey(getGeminiKey())
   }, [open])
 
   // ── One-time init: load history or show welcome ──────────────────────────────
@@ -291,6 +296,9 @@ export default function AIFloating() {
     const init = async () => {
       const key = await getSetting('groqApiKey')
       const resolved = key || import.meta.env.VITE_GROQ_API_KEY || null
+      const gKey = getGeminiKey()
+      setGeminiKey(gKey)
+      const hasAnyKey = !!(resolved || gKey)
       const pageCtx = getPageContext(pathname)
       const base = await buildSystemPrompt()
       systemPromptRef.current = base + `\n\n## Current Page Context\n${pageCtx.text}`
@@ -305,13 +313,13 @@ export default function AIFloating() {
             setInitialized(true)
             return
           }
-        } catch {}
+        } catch { }
       }
 
       // No history — show welcome
       setMessages([{
         role: 'assistant',
-        content: resolved
+        content: hasAnyKey
           ? `Hey Coach! 👋 How can I help you today?`
           : `Hi Coach! 👋 Add your free Groq API key in Settings to unlock AI coaching.`,
       }])
@@ -337,20 +345,20 @@ export default function AIFloating() {
     )
     setMessages(prev => {
       if (prev.length !== 1 || prev[0].role !== 'assistant') return prev
-      return [{ role: 'assistant', content: apiKey ? `Hey Coach! 👋 How can I help you today?` : prev[0].content }]
+      return [{ role: 'assistant', content: (apiKey || geminiKey) ? `Hey Coach! 👋 How can I help you today?` : prev[0].content }]
     })
   }, [pathname, initialized])
 
   // ── Update welcome when API key arrives ──────────────────────────────────────
   useEffect(() => {
-    if (!initialized || !apiKey) return
+    if (!initialized || !(apiKey || geminiKey)) return
     setMessages(prev => {
       if (prev.length === 1 && prev[0].role === 'assistant' && prev[0].content.includes('API key')) {
         return [{ role: 'assistant', content: `Hey Coach! 👋 How can I help you today?` }]
       }
       return prev
     })
-  }, [apiKey, initialized])
+  }, [apiKey, geminiKey, initialized])
 
   // ── Scroll + focus ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -367,41 +375,21 @@ export default function AIFloating() {
 
   // ── Clear chat ────────────────────────────────────────────────────────────────
   const clearChat = () => {
+    const hasAnyKey = !!(apiKey || geminiKey)
     const welcome = {
       role: 'assistant',
-      content: apiKey ? `Hey Coach! 👋 How can I help you today?` : `Hi Coach! 👋 Add your free Groq API key in Settings to unlock AI coaching.`,
+      content: hasAnyKey ? `Hey Coach! 👋 How can I help you today?` : `Hi Coach! 👋 Add your free Groq API key in Settings to unlock AI coaching.`,
     }
     setMessages([welcome])
     setSetting('aiChatHistory', JSON.stringify([welcome]))
-  }
-
-  // ── Groq API ──────────────────────────────────────────────────────────────────
-  const callGroq = async (msgs) => {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'system', content: systemPromptRef.current }, ...msgs],
-        tools: TOOL_DEFINITIONS,
-        tool_choice: 'auto',
-        max_tokens: 1024,
-        temperature: 0.7,
-      }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.error?.message || `API error ${res.status}`)
-    }
-    const data = await res.json()
-    const msg = data.choices?.[0]?.message
-    return { content: msg?.content || null, toolCalls: msg?.tool_calls || null, rawAssistantMessage: msg }
+    setActiveProvider(null)
   }
 
   // ── Send message ──────────────────────────────────────────────────────────────
   const sendMessage = async (text) => {
     const userText = text || input.trim()
-    if (!userText || loading || !apiKey) return
+    const hasAnyKey = !!(apiKey || geminiKey)
+    if (!userText || loading || !hasAnyKey) return
 
     setInput('')
     setError(null)
@@ -416,11 +404,12 @@ export default function AIFloating() {
         .filter((_, i) => !(i === 0 && newMessages[0]?.role === 'assistant'))
         .map(m => ({ role: m.role, content: m.content }))
 
-      let result = await callGroq(apiMessages)
+      let result = await callAI({ groqKey: apiKey, geminiKey, systemPrompt: systemPromptRef.current, messages: apiMessages })
+      setActiveProvider(result.provider)
       let currentMessages = [...newMessages]
       let iterations = 0
 
-      while (result.toolCalls?.length > 0 && iterations < 5) {
+      while (result.toolCalls?.length > 0 && iterations < 10) {
         iterations++
         const toolResults = []
 
@@ -444,7 +433,12 @@ export default function AIFloating() {
           toolResults.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(toolResult) })
         }
 
-        result = await callGroq([...apiMessages, result.rawAssistantMessage, ...toolResults])
+        result = await callAI({
+          groqKey: apiKey, geminiKey,
+          systemPrompt: systemPromptRef.current,
+          messages: [...apiMessages, result.rawAssistantMessage, ...toolResults],
+        })
+        setActiveProvider(result.provider)
       }
 
       if (result.content) {
@@ -486,7 +480,9 @@ export default function AIFloating() {
               </div>
               <div>
                 <p className="font-semibold text-slate-100 text-sm leading-tight">AI Coach</p>
-                <p className="text-[10px] text-slate-500 leading-tight">Groq · Llama 3.3 · Full system access</p>
+                <p className="text-[10px] text-slate-500 leading-tight">
+                  {activeProvider === 'gemini' ? 'Google · Gemini 2.0 Flash' : 'Groq · Llama 3.3'} · Full system access
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-1.5">
@@ -529,7 +525,7 @@ export default function AIFloating() {
           </div>
 
           {/* No API key — Settings CTA */}
-          {!apiKey && initialized && (
+          {!(apiKey || geminiKey) && initialized && (
             <div className="mx-4 mb-2 flex-shrink-0">
               <button
                 onClick={() => { setOpen(false); navigate('/settings') }}
@@ -542,7 +538,7 @@ export default function AIFloating() {
           )}
 
           {/* Quick prompts — shown before first user message, only when ready */}
-          {!hasUserMessages && !loading && initialized && apiKey && (
+          {!hasUserMessages && !loading && initialized && (apiKey || geminiKey) && (
             <div className="px-4 pt-1 pb-2 flex-shrink-0">
               <div className="flex flex-wrap gap-1.5">
                 {pageCtx.quickPrompts.map((qp, i) => (
@@ -581,14 +577,14 @@ export default function AIFloating() {
                   : !apiKey ? 'Add Groq API key in Settings to chat'
                     : 'Ask anything — drills, sessions, players, diagrams...'
               }
-              disabled={loading || !apiKey || !initialized}
+              disabled={loading || !(apiKey || geminiKey) || !initialized}
               rows={1}
               className="flex-1 glass-input px-3 py-2.5 text-sm resize-none disabled:opacity-40"
               style={{ minHeight: '40px', maxHeight: '80px' }}
             />
             <button
               onClick={() => sendMessage()}
-              disabled={loading || !input.trim() || !apiKey}
+              disabled={loading || !input.trim() || !(apiKey || geminiKey)}
               className="flex-shrink-0 w-10 h-10 rounded-xl gradient-emerald text-white flex items-center justify-center hover:opacity-90 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
             >
               {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}

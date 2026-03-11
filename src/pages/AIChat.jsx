@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { Send, Loader2, AlertCircle, Bot, User, Settings, Wrench, Sparkles, Check } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSetting } from '../db/db'
-import { TOOL_DEFINITIONS, executeTool, buildSystemPrompt } from '../ai/aiTools'
+import { executeTool, buildSystemPrompt } from '../ai/aiTools'
+import { callAI, getGeminiKey } from '../ai/aiService'
 
 const QUICK_PROMPTS = [
   { label: '🎯 Drill idea', text: 'Create a fun dribbling drill with a pirate theme for my 5-year-olds.' },
@@ -57,6 +58,8 @@ function Message({ msg }) {
 export default function AIChat() {
   const navigate = useNavigate()
   const [apiKey, setApiKey] = useState(null)
+  const [geminiKey, setGeminiKey] = useState(null)
+  const [activeProvider, setActiveProvider] = useState(null)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -65,17 +68,20 @@ export default function AIChat() {
   const inputRef = useRef(null)
   const systemPromptRef = useRef('')
 
-  // Load API key and build dynamic system prompt
+  // Load API keys and build dynamic system prompt
   useEffect(() => {
     const init = async () => {
       const key = await getSetting('groqApiKey')
       const resolvedKey = key || import.meta.env.VITE_GROQ_API_KEY || null
       setApiKey(resolvedKey)
+      const gKey = getGeminiKey()
+      setGeminiKey(gKey)
+      const hasAnyKey = !!(resolvedKey || gKey)
 
       // Build dynamic system prompt with live context
       systemPromptRef.current = await buildSystemPrompt()
 
-      if (!resolvedKey) {
+      if (!hasAnyKey) {
         setMessages([{
           role: 'assistant',
           content: "Hi Coach! 👋 I'm your AI coaching assistant with full access to your sessions, drills, and player data.\n\nTo get started, I need your Groq API key (it's free!). Head to Settings to add it.",
@@ -99,8 +105,9 @@ export default function AIChat() {
     const userText = text || input.trim()
     if (!userText || loading) return
 
-    if (!apiKey) {
-      setError('No Groq API key found. Please add it in Settings.')
+    const hasAnyKey = !!(apiKey || geminiKey)
+    if (!hasAnyKey) {
+      setError('No API key found. Please add a Groq key in Settings.')
       return
     }
 
@@ -117,13 +124,14 @@ export default function AIChat() {
         .filter((_, i) => !(i === 0 && newMessages[0]?.role === 'assistant'))
         .map(m => ({ role: m.role, content: m.content }))
 
-      // Call Groq with tools
-      let result = await callGroq(apiMessages)
+      // Call AI with fallback
+      let result = await callAI({ groqKey: apiKey, geminiKey, systemPrompt: systemPromptRef.current, messages: apiMessages })
+      setActiveProvider(result.provider)
       let currentMessages = [...newMessages]
 
-      // Tool calling loop (max 5 iterations for safety)
+      // Tool calling loop (max 10 iterations for safety)
       let iterations = 0
-      while (result.toolCalls && result.toolCalls.length > 0 && iterations < 5) {
+      while (result.toolCalls && result.toolCalls.length > 0 && iterations < 10) {
         iterations++
 
         // Execute each tool call
@@ -148,13 +156,14 @@ export default function AIChat() {
           })
         }
 
-        // Send tool results back to Groq for final response
+        // Send tool results back for final response
         const followUp = [
           ...apiMessages,
           result.rawAssistantMessage,
           ...toolResults,
         ]
-        result = await callGroq(followUp)
+        result = await callAI({ groqKey: apiKey, geminiKey, systemPrompt: systemPromptRef.current, messages: followUp })
+        setActiveProvider(result.provider)
       }
 
       // Final assistant reply
@@ -170,43 +179,6 @@ export default function AIChat() {
     }
   }
 
-  // ─── Groq API call helper ───────────────────────────────────────────────────
-  const callGroq = async (messages) => {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: systemPromptRef.current },
-          ...messages,
-        ],
-        tools: TOOL_DEFINITIONS,
-        tool_choice: 'auto',
-        max_tokens: 1024,
-        temperature: 0.7,
-      }),
-    })
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}))
-      throw new Error(err.error?.message || `API error ${response.status}`)
-    }
-
-    const data = await response.json()
-    const choice = data.choices?.[0]
-    const msg = choice?.message
-
-    return {
-      content: msg?.content || null,
-      toolCalls: msg?.tool_calls || null,
-      rawAssistantMessage: msg,
-    }
-  }
-
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -219,9 +191,11 @@ export default function AIChat() {
       <div className="flex items-center justify-between mb-3">
         <div>
           <h1 className="font-display font-black text-2xl text-slate-100">AI Coach</h1>
-          <p className="text-slate-500 text-sm">Full system access · Groq + Llama 3.3</p>
+          <p className="text-slate-500 text-sm">
+            Full system access · {activeProvider === 'gemini' ? 'Google Gemini 2.0 Flash' : 'Groq + Llama 3.3'}
+          </p>
         </div>
-        {!apiKey && (
+        {!(apiKey || geminiKey) && (
           <button
             onClick={() => navigate('/settings')}
             className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-semibold px-3 py-2 rounded-xl hover:bg-amber-500/15 transition-colors"
@@ -280,7 +254,7 @@ export default function AIChat() {
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Ask anything — I can read & edit your sessions, drills, and players..."
-          disabled={loading || !apiKey}
+          disabled={loading || !(apiKey || geminiKey)}
           rows={1}
           className="flex-1 glass-input px-3 py-2.5 text-sm resize-none disabled:opacity-40"
           style={{ minHeight: '44px', maxHeight: '100px' }}

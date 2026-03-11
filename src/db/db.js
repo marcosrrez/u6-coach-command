@@ -34,6 +34,19 @@ db.version(3).stores({
   customDrills: '++id, name, category, framework, createdAt',
 });
 
+db.version(4).stores({
+  players: '++id, name, createdAt',
+  sessionCompletions: '++id, sessionId, completedAt, type',
+  playerNotes: '++id, sessionId, playerId, createdAt',
+  developmentScores: '++id, sessionId, playerId, createdAt',
+  phaseChecks: '++id, sessionId, phaseIndex, checkedAt',
+  settings: 'key',
+  sessionCustomizations: 'sessionId',
+  customDrills: '++id, name, category, framework, createdAt',
+  // Activity-level checks within phases
+  activityChecks: '++id, sessionId, phaseIndex, activityIndex, checkedAt',
+});
+
 // ─── Default Players ───────────────────────────────────────────────────────────
 export const DEFAULT_PLAYERS = [
   { name: 'Player 1', emoji: '⚽', color: '#16a34a', position: 'Field', jerseyNumber: 1 },
@@ -60,6 +73,27 @@ export async function getPlayers() {
 
 export async function updatePlayer(id, updates) {
   return db.players.update(id, updates);
+}
+
+export async function addPlayer({ name, emoji, color, position, jerseyNumber }) {
+  const players = await db.players.toArray();
+  const maxJersey = players.length > 0 ? Math.max(...players.map(p => p.jerseyNumber || 0)) : 0;
+  return db.players.add({
+    name: name || `Player ${players.length + 1}`,
+    emoji: emoji || '⚽',
+    color: color || '#16a34a',
+    position: position || 'Field',
+    jerseyNumber: jerseyNumber || maxJersey + 1,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+export async function deletePlayer(id) {
+  await db.transaction('rw', [db.players, db.playerNotes, db.developmentScores], async () => {
+    await db.players.delete(id);
+    await db.playerNotes.where('playerId').equals(id).delete();
+    await db.developmentScores.where('playerId').equals(id).delete();
+  });
 }
 
 // ─── Session Completion Operations ────────────────────────────────────────────
@@ -122,6 +156,42 @@ export async function getCheckedPhases(sessionId) {
     .equals(sessionId)
     .toArray();
   return new Set(checks.map((c) => c.phaseIndex));
+}
+
+// ─── Activity Check Operations ────────────────────────────────────────────────
+export async function checkActivity(sessionId, phaseIndex, activityIndex) {
+  const existing = await db.activityChecks
+    .where('sessionId')
+    .equals(sessionId)
+    .and((a) => a.phaseIndex === phaseIndex && a.activityIndex === activityIndex)
+    .first();
+  if (!existing) {
+    await db.activityChecks.add({
+      sessionId,
+      phaseIndex,
+      activityIndex,
+      checkedAt: new Date().toISOString(),
+    });
+  }
+}
+
+export async function uncheckActivity(sessionId, phaseIndex, activityIndex) {
+  await db.activityChecks
+    .where('sessionId')
+    .equals(sessionId)
+    .and((a) => a.phaseIndex === phaseIndex && a.activityIndex === activityIndex)
+    .delete();
+}
+
+export async function getCheckedActivities(sessionId) {
+  const checks = await db.activityChecks
+    .where('sessionId')
+    .equals(sessionId)
+    .toArray();
+  // Returns a Map: key = "phaseIndex-activityIndex", value = true
+  const map = new Map();
+  checks.forEach((c) => map.set(`${c.phaseIndex}-${c.activityIndex}`, true));
+  return map;
 }
 
 // ─── Player Notes Operations ───────────────────────────────────────────────────
@@ -228,7 +298,7 @@ export async function deleteCustomDrill(id) {
 
 // ─── Export / Import ───────────────────────────────────────────────────────────
 export async function exportData() {
-  const [players, completions, notes, scores, phases, settingsAll, customizations, customDrillsAll] =
+  const [players, completions, notes, scores, phases, settingsAll, customizations, customDrillsAll, activityChecksAll] =
     await Promise.all([
       db.players.toArray(),
       db.sessionCompletions.toArray(),
@@ -238,10 +308,11 @@ export async function exportData() {
       db.settings.toArray(),
       db.sessionCustomizations.toArray(),
       db.customDrills.toArray(),
+      db.activityChecks.toArray(),
     ]);
   return {
     exportedAt: new Date().toISOString(),
-    version: 3,
+    version: 4,
     players,
     completions,
     notes,
@@ -250,13 +321,14 @@ export async function exportData() {
     settings: settingsAll,
     sessionCustomizations: customizations,
     customDrills: customDrillsAll,
+    activityChecks: activityChecksAll,
   };
 }
 
 export async function importData(data) {
   await db.transaction(
     'rw',
-    [db.players, db.sessionCompletions, db.playerNotes, db.developmentScores, db.phaseChecks, db.settings, db.sessionCustomizations],
+    [db.players, db.sessionCompletions, db.playerNotes, db.developmentScores, db.phaseChecks, db.settings, db.sessionCustomizations, db.activityChecks],
     async () => {
       if (data.players?.length) {
         await db.players.clear();
@@ -285,6 +357,10 @@ export async function importData(data) {
       if (data.sessionCustomizations?.length) {
         await db.sessionCustomizations.clear();
         await db.sessionCustomizations.bulkAdd(data.sessionCustomizations);
+      }
+      if (data.activityChecks?.length) {
+        await db.activityChecks.clear();
+        await db.activityChecks.bulkAdd(data.activityChecks);
       }
     }
   );
