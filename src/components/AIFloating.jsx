@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
-import { Bot, Send, Loader2, AlertCircle, User, Wrench, Sparkles, ChevronDown } from 'lucide-react'
-import { getSetting } from '../db/db'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Bot, Send, Loader2, AlertCircle, User, Wrench, Sparkles, ChevronDown, Settings, Trash2 } from 'lucide-react'
+import { getSetting, setSetting } from '../db/db'
 import { TOOL_DEFINITIONS, executeTool, buildSystemPrompt } from '../ai/aiTools'
 import { PRACTICES, GAMES } from '../data/sessions'
 
@@ -78,7 +78,7 @@ function getPageContext(pathname) {
     '/drills': {
       text: 'User is browsing the drill library.',
       quickPrompts: [
-        { label: '🎭 Story drill', text: 'Create a story-based dribbling drill with a pirate theme.' },
+        { label: '🎭 Story drill', text: 'Create a story-based dribbling drill with a pirate theme and show me the field setup.' },
         { label: '🔵 Barça drills', text: 'Show me all Barça-style drills in the library.' },
         { label: '⭐ Top picks', text: 'What are your top 3 drills for 5-year-olds?' },
         { label: '🆕 Custom drill', text: 'Create a new warm-up drill and add it to my library.' },
@@ -96,7 +96,7 @@ function getPageContext(pathname) {
       text: 'User is reading the coaching philosophy page.',
       quickPrompts: [
         { label: '💡 HEART values', text: 'Explain the Barça HEART values in simple terms.' },
-        { label: '🧠 Rondo setup', text: 'How do I run a Rondo with 5-year-olds?' },
+        { label: '🧠 Rondo setup', text: 'Show me how to set up a Rondo with 5-year-olds — draw the field diagram.' },
         { label: '⚡ Ajax TIPS', text: 'Explain the Ajax TIPS model for U-6 coaching.' },
       ],
     },
@@ -112,8 +112,116 @@ function getPageContext(pathname) {
   }
 }
 
+// ─── Field diagram SVG renderer ───────────────────────────────────────────────
+function FieldDiagram({ data }) {
+  // Stable random ID per mount — prevents marker ID collisions across multiple diagrams
+  const [id] = useState(() => `d${Math.random().toString(36).slice(2, 8)}`)
+  const CELL = 36
+  const cols = Math.min(Math.max(data.cols || 8, 4), 14)
+  const rows = Math.min(Math.max(data.rows || 6, 3), 10)
+  const W = cols * CELL
+  const H = rows * CELL
+
+  const TYPE_COLORS = {
+    cone: '#f59e0b',
+    player: '#10b981',
+    defender: '#ef4444',
+    coach: '#3b82f6',
+    ball: '#f8fafc',
+    goal: '#f8fafc',
+  }
+
+  return (
+    <div className="bg-emerald-950/30 border border-emerald-500/20 rounded-2xl p-3">
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className="text-xs">📐</span>
+        <p className="text-[11px] text-emerald-400 font-bold uppercase tracking-wider">{data.title}</p>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto rounded-xl" style={{ maxHeight: 200 }}>
+        {/* Field background */}
+        <rect x={0} y={0} width={W} height={H} fill="#1c3d1c" rx={4} />
+        {/* Grid lines */}
+        {Array.from({ length: cols - 1 }, (_, i) => (
+          <line key={`v${i}`} x1={(i + 1) * CELL} y1={4} x2={(i + 1) * CELL} y2={H - 4}
+            stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
+        ))}
+        {Array.from({ length: rows - 1 }, (_, i) => (
+          <line key={`h${i}`} x1={4} y1={(i + 1) * CELL} x2={W - 4} y2={(i + 1) * CELL}
+            stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
+        ))}
+        {/* Border */}
+        <rect x={2} y={2} width={W - 4} height={H - 4} fill="none"
+          stroke="rgba(255,255,255,0.25)" strokeWidth={1.5} rx={3} />
+        {/* Arrowhead marker — unique ID per diagram instance */}
+        <defs>
+          <marker id={id} markerWidth={7} markerHeight={6} refX={6} refY={3} orient="auto">
+            <polygon points="0 0, 7 3, 0 6" fill="rgba(255,255,255,0.75)" />
+          </marker>
+        </defs>
+        {/* Arrows */}
+        {(data.arrows || []).map((arr, i) => {
+          const x1 = arr.fromCol * CELL + CELL / 2
+          const y1 = arr.fromRow * CELL + CELL / 2
+          const x2 = arr.toCol * CELL + CELL / 2
+          const y2 = arr.toRow * CELL + CELL / 2
+          return (
+            <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke={arr.color || 'rgba(255,255,255,0.65)'}
+              strokeWidth={1.8}
+              strokeDasharray={arr.dashed ? '5,3' : undefined}
+              markerEnd={`url(#${id})`} />
+          )
+        })}
+        {/* Elements */}
+        {(data.elements || []).map((el, i) => {
+          const x = el.col * CELL + CELL / 2
+          const y = el.row * CELL + CELL / 2
+          const col = el.color || TYPE_COLORS[el.type] || '#ffffff'
+
+          if (el.type === 'cone') {
+            return (
+              <g key={i}>
+                <polygon points={`${x},${y - 11} ${x - 8},${y + 7} ${x + 8},${y + 7}`} fill={col} opacity={0.9} />
+                {el.label && <text x={x} y={y + 18} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.4)">{el.label}</text>}
+              </g>
+            )
+          }
+          if (el.type === 'goal') {
+            return (
+              <g key={i}>
+                <rect x={x - 14} y={y - 7} width={28} height={14} fill="none" stroke={col} strokeWidth={2.5} rx={1} />
+                {el.label && <text x={x} y={y + 20} textAnchor="middle" fontSize={8} fill={col} opacity={0.6}>{el.label}</text>}
+              </g>
+            )
+          }
+          if (el.type === 'ball') {
+            return (
+              <g key={i}>
+                <circle cx={x} cy={y} r={7} fill={col} />
+                <circle cx={x} cy={y} r={7} fill="none" stroke="rgba(0,0,0,0.3)" strokeWidth={0.5} />
+              </g>
+            )
+          }
+          // player / defender / coach
+          const defaultLabel = { player: 'P', defender: 'D', coach: 'C' }[el.type] || '?'
+          return (
+            <g key={i}>
+              <circle cx={x} cy={y} r={12} fill={col} opacity={0.85} />
+              <text x={x} y={y + 4.5} textAnchor="middle" fontSize={10} fontWeight="bold" fill="white">
+                {el.label || defaultLabel}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
 // ─── Message component ────────────────────────────────────────────────────────
 function Message({ msg }) {
+  if (msg.role === 'diagram') return <FieldDiagram data={msg.data} />
+
   const isUser = msg.role === 'user'
 
   if (msg.role === 'action') {
@@ -156,6 +264,7 @@ function Message({ msg }) {
 // ─── Main floating AI ─────────────────────────────────────────────────────────
 export default function AIFloating() {
   const { pathname } = useLocation()
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [apiKey, setApiKey] = useState(null)
   const [messages, setMessages] = useState([])
@@ -176,7 +285,7 @@ export default function AIFloating() {
     })
   }, [open])
 
-  // ── One-time init: build system prompt + welcome message ─────────────────────
+  // ── One-time init: load history or show welcome ──────────────────────────────
   useEffect(() => {
     if (!open || initialized) return
     const init = async () => {
@@ -185,16 +294,40 @@ export default function AIFloating() {
       const pageCtx = getPageContext(pathname)
       const base = await buildSystemPrompt()
       systemPromptRef.current = base + `\n\n## Current Page Context\n${pageCtx.text}`
+
+      // Restore saved chat history
+      const saved = await getSetting('aiChatHistory')
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMessages(parsed)
+            setInitialized(true)
+            return
+          }
+        } catch {}
+      }
+
+      // No history — show welcome
       setMessages([{
         role: 'assistant',
-        content: resolved ? `Hey Coach! 👋 How can I help you today?` : `Hi Coach! 👋 Add your free Groq API key in Settings to unlock AI coaching.`,
+        content: resolved
+          ? `Hey Coach! 👋 How can I help you today?`
+          : `Hi Coach! 👋 Add your free Groq API key in Settings to unlock AI coaching.`,
       }])
       setInitialized(true)
     }
     init()
   }, [open, initialized])
 
-  // ── Patch system prompt when route changes; refresh welcome if pre-conversation ─
+  // ── Persist chat to IndexedDB whenever messages change ──────────────────────
+  useEffect(() => {
+    if (!initialized) return
+    const toSave = messages.filter(m => m.role !== 'action').slice(-60)
+    setSetting('aiChatHistory', JSON.stringify(toSave))
+  }, [messages, initialized])
+
+  // ── Patch system prompt + welcome on route change ────────────────────────────
   useEffect(() => {
     if (!initialized) return
     const ctx = getPageContext(pathname)
@@ -202,17 +335,13 @@ export default function AIFloating() {
       /\n\n## Current Page Context\n[\s\S]*/,
       `\n\n## Current Page Context\n${ctx.text}`
     )
-    // If still on first message, update it to reflect new location
     setMessages(prev => {
       if (prev.length !== 1 || prev[0].role !== 'assistant') return prev
-      return [{
-        role: 'assistant',
-        content: apiKey ? `Hey Coach! 👋 How can I help you today?` : prev[0].content,
-      }]
+      return [{ role: 'assistant', content: apiKey ? `Hey Coach! 👋 How can I help you today?` : prev[0].content }]
     })
   }, [pathname, initialized])
 
-  // ── Update welcome message text when API key comes in ────────────────────────
+  // ── Update welcome when API key arrives ──────────────────────────────────────
   useEffect(() => {
     if (!initialized || !apiKey) return
     setMessages(prev => {
@@ -235,6 +364,16 @@ export default function AIFloating() {
   useEffect(() => {
     if (open) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+  // ── Clear chat ────────────────────────────────────────────────────────────────
+  const clearChat = () => {
+    const welcome = {
+      role: 'assistant',
+      content: apiKey ? `Hey Coach! 👋 How can I help you today?` : `Hi Coach! 👋 Add your free Groq API key in Settings to unlock AI coaching.`,
+    }
+    setMessages([welcome])
+    setSetting('aiChatHistory', JSON.stringify([welcome]))
+  }
 
   // ── Groq API ──────────────────────────────────────────────────────────────────
   const callGroq = async (msgs) => {
@@ -271,8 +410,9 @@ export default function AIFloating() {
     setLoading(true)
 
     try {
+      // Exclude action/diagram cards — they're UI-only, not real conversation turns
       const apiMessages = newMessages
-        .filter(m => m.role !== 'action')
+        .filter(m => m.role !== 'action' && m.role !== 'diagram')
         .filter((_, i) => !(i === 0 && newMessages[0]?.role === 'assistant'))
         .map(m => ({ role: m.role, content: m.content }))
 
@@ -283,17 +423,27 @@ export default function AIFloating() {
       while (result.toolCalls?.length > 0 && iterations < 5) {
         iterations++
         const toolResults = []
+
         for (const tc of result.toolCalls) {
           const args = JSON.parse(tc.function.arguments || '{}')
           const toolResult = await executeTool(tc.function.name, args)
+
+          // Action card
           currentMessages = [...currentMessages, {
             role: 'action',
             toolName: tc.function.name.replace(/_/g, ' '),
             content: toolResult.message || toolResult.error || `Executed ${tc.function.name}`,
           }]
+
+          // Inject diagram card after the action card
+          if (tc.function.name === 'draw_field_diagram' && toolResult.diagram) {
+            currentMessages = [...currentMessages, { role: 'diagram', data: toolResult.diagram }]
+          }
+
           setMessages(currentMessages)
           toolResults.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(toolResult) })
         }
+
         result = await callGroq([...apiMessages, result.rawAssistantMessage, ...toolResults])
       }
 
@@ -339,11 +489,19 @@ export default function AIFloating() {
                 <p className="text-[10px] text-slate-500 leading-tight">Groq · Llama 3.3 · Full system access</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              {/* Current page context badge */}
+            <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-medium text-slate-500 bg-white/5 border border-white/8 px-2 py-1 rounded-full">
                 {badge.emoji} {badge.label}
               </span>
+              {hasUserMessages && (
+                <button
+                  onClick={clearChat}
+                  className="p-1.5 rounded-lg text-slate-600 hover:text-slate-400 hover:bg-white/5 transition-colors"
+                  title="Clear chat"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
               <button
                 onClick={() => setOpen(false)}
                 className="p-2 rounded-xl text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors"
@@ -370,8 +528,21 @@ export default function AIFloating() {
             <div ref={bottomRef} />
           </div>
 
-          {/* Quick prompts — before first user message */}
-          {!hasUserMessages && !loading && initialized && (
+          {/* No API key — Settings CTA */}
+          {!apiKey && initialized && (
+            <div className="mx-4 mb-2 flex-shrink-0">
+              <button
+                onClick={() => { setOpen(false); navigate('/settings') }}
+                className="w-full flex items-center justify-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-semibold px-4 py-2.5 rounded-xl hover:bg-amber-500/15 transition-colors"
+              >
+                <Settings size={13} />
+                Add free Groq API key to unlock AI coaching →
+              </button>
+            </div>
+          )}
+
+          {/* Quick prompts — shown before first user message, only when ready */}
+          {!hasUserMessages && !loading && initialized && apiKey && (
             <div className="px-4 pt-1 pb-2 flex-shrink-0">
               <div className="flex flex-wrap gap-1.5">
                 {pageCtx.quickPrompts.map((qp, i) => (
@@ -395,7 +566,7 @@ export default function AIFloating() {
             </div>
           )}
 
-          {/* Input with safe-area bottom padding */}
+          {/* Input with iOS safe-area padding */}
           <div
             className="flex gap-2 px-4 pt-2 border-t border-white/5 flex-shrink-0"
             style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom, 16px))' }}
@@ -407,8 +578,8 @@ export default function AIFloating() {
               onKeyDown={handleKeyDown}
               placeholder={
                 !initialized ? 'Loading...'
-                : !apiKey ? 'Add Groq API key in Settings to chat'
-                : 'Ask anything — drills, sessions, players...'
+                  : !apiKey ? 'Add Groq API key in Settings to chat'
+                    : 'Ask anything — drills, sessions, players, diagrams...'
               }
               disabled={loading || !apiKey || !initialized}
               rows={1}
@@ -427,7 +598,7 @@ export default function AIFloating() {
         </div>
       </div>
 
-      {/* FAB — with conversation indicator dot */}
+      {/* FAB — amber dot when conversation exists */}
       {!open && (
         <button
           onClick={() => setOpen(true)}
@@ -442,7 +613,6 @@ export default function AIFloating() {
           aria-label="Open AI Coach"
         >
           <Bot size={22} />
-          {/* Dot indicator: conversation in progress */}
           {hasUserMessages && (
             <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-400 rounded-full border-2 border-[#0d1117]" />
           )}

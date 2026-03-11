@@ -8,6 +8,7 @@ import {
     getPlayers, getCustomDrills, addCustomDrill, deleteCustomDrill,
     getPlayerNotes, savePlayerNote, getPlayerScores,
     getCompletedSessionIds, getSessionCustomization, saveSessionCustomization,
+    markSessionComplete,
 } from '../db/db'
 
 // ─── Tool Definitions (sent to Groq) ──────────────────────────────────────────
@@ -110,6 +111,68 @@ export const TOOL_DEFINITIONS = [
                 type: 'object', properties: {
                     playerId: { type: 'integer', description: 'Player ID' },
                 }, required: ['playerId']
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'draw_field_diagram',
+            description: 'Draw a visual tactical/drill diagram on a mini soccer field grid. Use this whenever the coach asks to visualize a drill setup, formation, or positioning. Also use proactively when creating a drill to show the spatial layout.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    title: { type: 'string', description: 'Short diagram title, e.g. "Cone Maze Setup" or "4v1 Rondo"' },
+                    cols: { type: 'integer', description: 'Grid width in cells (5–12). Default: 8.' },
+                    rows: { type: 'integer', description: 'Grid height in cells (4–8). Default: 6.' },
+                    elements: {
+                        type: 'array',
+                        description: 'Elements to place on the field grid.',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                type: { type: 'string', enum: ['cone', 'player', 'defender', 'coach', 'ball', 'goal'], description: 'Element type. cone=orange triangle, player=green circle, defender=red circle, coach=blue circle, ball=white circle, goal=white rectangle.' },
+                                col: { type: 'integer', description: 'Column (0-based, left to right)' },
+                                row: { type: 'integer', description: 'Row (0-based, top to bottom)' },
+                                label: { type: 'string', description: 'Short 1-2 char label shown inside the element, e.g. "1", "A", "GK"' },
+                                color: { type: 'string', description: 'Optional hex color override, e.g. "#f59e0b"' },
+                            },
+                            required: ['type', 'col', 'row'],
+                        },
+                    },
+                    arrows: {
+                        type: 'array',
+                        description: 'Movement arrows between grid positions.',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                fromCol: { type: 'integer' },
+                                fromRow: { type: 'integer' },
+                                toCol: { type: 'integer' },
+                                toRow: { type: 'integer' },
+                                dashed: { type: 'boolean', description: 'True for ball movement/passes, false for player runs.' },
+                                color: { type: 'string', description: 'Arrow color, e.g. "#ffffff" or "#f59e0b"' },
+                            },
+                            required: ['fromCol', 'fromRow', 'toCol', 'toRow'],
+                        },
+                    },
+                },
+                required: ['title', 'elements'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'mark_session_complete',
+            description: 'Mark a practice session or game as completed in the season tracker. Use when the coach says they just finished a session or game.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    sessionNumber: { type: 'integer', description: 'Practice session number (1–16) or game number (1–8)' },
+                    type: { type: 'string', enum: ['practice', 'game'], description: 'Whether this is a practice or a game' },
+                },
+                required: ['sessionNumber', 'type'],
             },
         },
     },
@@ -261,6 +324,29 @@ export async function executeTool(toolName, args) {
             return { playerId: args.playerId, notes, scores }
         }
 
+        case 'draw_field_diagram': {
+            return {
+                success: true,
+                message: `Diagram "${args.title}" created.`,
+                diagram: {
+                    title: args.title,
+                    cols: Math.min(Math.max(args.cols || 8, 4), 14),
+                    rows: Math.min(Math.max(args.rows || 6, 3), 10),
+                    elements: args.elements || [],
+                    arrows: args.arrows || [],
+                },
+            }
+        }
+
+        case 'mark_session_complete': {
+            const session = args.type === 'game'
+                ? GAMES.find(g => g.gameNumber === args.sessionNumber)
+                : PRACTICES.find(p => p.sessionNumber === args.sessionNumber)
+            if (!session) return { error: `${args.type} ${args.sessionNumber} not found.` }
+            await markSessionComplete(session.id, args.type)
+            return { success: true, message: `${args.type === 'game' ? 'Game' : 'Practice'} ${args.sessionNumber} marked as complete!` }
+        }
+
         case 'get_season_overview': {
             const completed = await getCompletedSessionIds()
             return {
@@ -309,6 +395,8 @@ ${nextSession ? `- Next session: Practice ${nextSession.sessionNumber} — "${ne
 ## Your Capabilities (Tools)
 You have tools to:
 - **Create new drills** → adds to the library automatically
+- **Draw field diagrams** → visualize drill setups and formations on a mini soccer field. Use proactively when explaining spatial concepts.
+- **Mark sessions complete** → record when a practice or game is done
 - **Read session plans** → see full details of any practice
 - **Modify session plans** → add/remove drills from phases
 - **Read player info** → see roster, notes, development scores
