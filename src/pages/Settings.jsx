@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   Key, Download, Upload, RotateCcw, Info, Check, Eye, EyeOff,
-  ChevronRight, AlertTriangle, Wifi, Database
+  ChevronRight, AlertTriangle, Wifi, Database, Sparkles
 } from 'lucide-react'
 import { getSetting, setSetting, exportData, importData, seedDatabase } from '../db/db'
+import { getGeminiKey } from '../ai/aiService'
 import { SEASON_INFO } from '../data/sessions'
 
 function SectionHeader({ icon: Icon, title }) {
@@ -36,6 +37,11 @@ export default function Settings() {
   const [resetting, setResetting] = useState(false)
   const [resetDone, setResetDone] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [geminiKey, setGeminiKeyState] = useState('')
+  const [savedGeminiKey, setSavedGeminiKey] = useState(null)
+  const [showGeminiKey, setShowGeminiKey] = useState(false)
+  const [geminiKeySaved, setGeminiKeySaved] = useState(false)
+  const [envGeminiKey, setEnvGeminiKey] = useState(false)
   const fileInputRef = useRef(null)
 
   useEffect(() => {
@@ -43,6 +49,19 @@ export default function Settings() {
       if (key) {
         setSavedKey(key)
         setApiKey(key)
+      }
+    })
+    // Load Gemini key
+    const envKey = getGeminiKey()
+    if (envKey) {
+      setEnvGeminiKey(true)
+      setSavedGeminiKey(envKey)
+      setGeminiKeyState(envKey)
+    }
+    getSetting('geminiApiKey').then(key => {
+      if (key) {
+        setSavedGeminiKey(key)
+        setGeminiKeyState(key)
       }
     })
   }, [])
@@ -180,11 +199,74 @@ export default function Settings() {
                 onClick={handleSaveKey}
                 disabled={!apiKey.trim()}
                 className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${keySaved
-                    ? 'bg-emerald-500/15 text-emerald-400'
-                    : 'gradient-emerald text-white hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed'
+                  ? 'bg-emerald-500/15 text-emerald-400'
+                  : 'gradient-emerald text-white hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed'
                   }`}
               >
                 {keySaved ? '✓ Key Saved!' : 'Save API Key'}
+              </button>
+            </div>
+          )}
+        </div>
+      </SettingCard>
+
+      {/* Google Gemini key */}
+      <SettingCard>
+        <div className="p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles size={14} className="text-blue-400" />
+            <p className="text-sm font-semibold text-slate-200">Google Gemini Key</p>
+            <span className="text-[9px] px-1.5 py-0.5 bg-blue-500/15 text-blue-300 rounded-full font-bold">BACKUP</span>
+          </div>
+          <p className="text-xs text-slate-500 mb-3">
+            Automatic fallback if Groq hits rate limits. {envGeminiKey && <span className="text-emerald-400">✓ Set via environment variable</span>}
+          </p>
+
+          {savedGeminiKey ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 bg-blue-500/10 border border-blue-500/15 rounded-xl px-3 py-2.5">
+                <Check size={14} className="text-blue-400 flex-shrink-0" />
+                <span className="text-xs text-blue-300 font-mono flex-1 truncate">
+                  {showGeminiKey ? savedGeminiKey : savedGeminiKey.slice(0, 8) + '••••••••' + savedGeminiKey.slice(-4)}
+                </span>
+                <button onClick={() => setShowGeminiKey(v => !v)} className="text-blue-400 flex-shrink-0">
+                  {showGeminiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              {!envGeminiKey && (
+                <button
+                  onClick={async () => { await setSetting('geminiApiKey', null); setSavedGeminiKey(null); setGeminiKeyState('') }}
+                  className="w-full text-xs font-semibold text-red-400 border border-red-500/20 bg-red-500/10 rounded-xl py-2 hover:bg-red-500/15 transition-colors"
+                >
+                  Remove Key
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <input
+                type={showGeminiKey ? 'text' : 'password'}
+                value={geminiKey}
+                onChange={e => setGeminiKeyState(e.target.value)}
+                placeholder="AIza••••••••••••••••••••"
+                className="w-full glass-input px-3 py-2.5 text-sm font-mono"
+              />
+              <button
+                onClick={async () => {
+                  const trimmed = geminiKey.trim()
+                  if (!trimmed) return
+                  await setSetting('geminiApiKey', trimmed)
+                  setSavedGeminiKey(trimmed)
+                  setGeminiKeySaved(true)
+                  setTimeout(() => setGeminiKeySaved(false), 2500)
+                }}
+                disabled={!geminiKey.trim()}
+                className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${geminiKeySaved
+                  ? 'bg-blue-500/15 text-blue-400'
+                  : 'bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-30 disabled:cursor-not-allowed'
+                  }`}
+              >
+                {geminiKeySaved ? '✓ Key Saved!' : 'Save Gemini Key'}
               </button>
             </div>
           )}
@@ -320,7 +402,7 @@ export default function Settings() {
             { label: 'Season', value: SEASON_INFO.name },
             { label: 'Sessions', value: '16 practices + 8 games' },
             { label: 'Storage', value: 'Local (IndexedDB)' },
-            { label: 'AI Model', value: 'Llama 3.1 via Groq' },
+            { label: 'AI Model', value: 'Llama 3.3 (Groq) + Gemini 2.0 Flash (fallback)' },
           ].map(({ label, value }) => (
             <div key={label} className="flex justify-between items-center">
               <span className="text-xs text-slate-500">{label}</span>

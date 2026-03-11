@@ -10,7 +10,7 @@ import { PRACTICES } from '../data/sessions'
 import {
   markSessionComplete, isSessionComplete,
   getCheckedPhases, checkPhase, uncheckPhase,
-  getSessionNotes, savePlayerNote, getPlayers,
+  getSessionNotes, savePlayerNote, getPlayers, setSetting, getSetting,
   getSessionCustomization, saveSessionCustomization, deleteSessionCustomization,
   checkActivity, uncheckActivity, getCheckedActivities,
 } from '../db/db'
@@ -513,6 +513,8 @@ export default function Session() {
   const [players, setPlayers] = useState([])
   const [notes, setNotes] = useState({})
   const [savedNotes, setSavedNotes] = useState({})
+  const [sessionNote, setSessionNote] = useState('')
+  const [sessionNoteSaved, setSessionNoteSaved] = useState('')
   const [activeTab, setActiveTab] = useState('plan')
 
   // ── Edit mode state ──
@@ -533,6 +535,10 @@ export default function Session() {
       noteList.forEach(n => { map[n.playerId] = n.text })
       setSavedNotes(map)
       setNotes(map)
+    })
+    getSetting(`sessionNote:${session.id}`).then(v => {
+      setSessionNote(v || '')
+      setSessionNoteSaved(v || '')
     })
     // Load customizations
     getSessionCustomization(session.id).then(cust => {
@@ -598,6 +604,11 @@ export default function Session() {
     const text = notes[playerId] || ''
     await savePlayerNote(session.id, playerId, text)
     setSavedNotes(prev => ({ ...prev, [playerId]: text }))
+  }
+
+  const handleSaveSessionNote = async () => {
+    await setSetting(`sessionNote:${session.id}`, sessionNote)
+    setSessionNoteSaved(sessionNote)
   }
 
   // ── Edit helpers ──
@@ -919,7 +930,36 @@ export default function Session() {
       {/* ── Tab: Player Notes ─────────────────────────── */}
       {activeTab === 'notes' && (
         <div className="space-y-3">
-          <p className="text-sm text-slate-500">Add notes for each player after the session.</p>
+          <p className="text-sm text-slate-500">Quick notes from today's session.</p>
+
+          {/* Quick session note */}
+          <div className="glass-card-solid p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-lg">📝</span>
+              <h3 className="font-display font-bold text-slate-200 text-sm">Session Note</h3>
+            </div>
+            <textarea
+              value={sessionNote}
+              onChange={e => setSessionNote(e.target.value)}
+              placeholder="How did the session go? Any observations, weather, energy levels..."
+              className="w-full text-sm glass-input px-3 py-3 resize-none"
+              rows={3}
+            />
+            <button
+              onClick={handleSaveSessionNote}
+              className={`mt-2 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${sessionNoteSaved === sessionNote
+                ? 'text-slate-500 bg-white/5'
+                : 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15'
+                }`}
+            >
+              {sessionNoteSaved === sessionNote ? '✓ Saved' : 'Save Note'}
+            </button>
+          </div>
+
+          {/* Per-player section heading */}
+          {players.length > 0 && (
+            <p className="text-xs text-slate-600 uppercase font-bold tracking-wide pt-2">Player Notes</p>
+          )}
           {players.map(player => (
             <div key={player.id} className="glass-card-solid p-4">
               <div className="flex items-center gap-2 mb-2">

@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { format, parseISO, isToday, isFuture, isPast, differenceInDays } from 'date-fns'
 import { ChevronRight, CheckCircle2, Clock } from 'lucide-react'
 import { ALL_SESSIONS, SEASON_INFO, PRACTICES, GAMES } from '../data/sessions'
-import { getCompletedSessionIds } from '../db/db'
+import { DRILLS } from '../data/drills'
+import { getCompletedSessionIds, getPlayers, getCustomDrills } from '../db/db'
 
 const FRAMEWORK_COLORS = {
   Barça: 'bg-blue-500/20 text-blue-300',
@@ -75,10 +76,14 @@ function SessionCard({ session, completed, navigate }) {
 export default function Dashboard() {
   const navigate = useNavigate()
   const [completedIds, setCompletedIds] = useState(new Set())
+  const [playerCount, setPlayerCount] = useState(0)
+  const [drillCount, setDrillCount] = useState(DRILLS.length)
   const today = new Date()
 
   useEffect(() => {
     getCompletedSessionIds().then(setCompletedIds)
+    getPlayers().then(p => setPlayerCount(p.length))
+    getCustomDrills().then(c => setDrillCount(DRILLS.length + c.length))
   }, [])
 
   const { todaySession, nextSession, recentSessions, stats } = useMemo(() => {
@@ -202,8 +207,8 @@ export default function Dashboard() {
         <h2 className="font-display font-bold text-slate-100 mb-2">Quick Access</h2>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { icon: '📚', label: 'Drill Library', desc: '30+ drills', to: '/drills', gradient: 'from-violet-500/15 to-violet-600/5', border: 'border-violet-500/20' },
-            { icon: '👥', label: 'My Players', desc: '5 athletes', to: '/players', gradient: 'from-blue-500/15 to-blue-600/5', border: 'border-blue-500/20' },
+            { icon: '📚', label: 'Drill Library', desc: `${drillCount} drills`, to: '/drills', gradient: 'from-violet-500/15 to-violet-600/5', border: 'border-violet-500/20' },
+            { icon: '👥', label: 'My Players', desc: `${playerCount} athlete${playerCount !== 1 ? 's' : ''}`, to: '/players', gradient: 'from-blue-500/15 to-blue-600/5', border: 'border-blue-500/20' },
             { icon: '🤖', label: 'AI Coach', desc: 'Ask anything', to: '/ai', gradient: 'from-indigo-500/15 to-indigo-600/5', border: 'border-indigo-500/20' },
             { icon: '📅', label: 'Full Calendar', desc: '8-week plan', to: '/calendar', gradient: 'from-amber-500/15 to-amber-600/5', border: 'border-amber-500/20' },
           ].map(({ icon, label, desc, to, gradient, border }) => (

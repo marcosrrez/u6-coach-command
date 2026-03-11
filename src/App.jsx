@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import ErrorBoundary from './components/ErrorBoundary'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Calendar from './pages/Calendar'
@@ -12,23 +13,26 @@ import Philosophy from './pages/Philosophy'
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="calendar" element={<Calendar />} />
-          <Route path="session/:id" element={<Session />} />
-          <Route path="game/:id" element={<GameDay />} />
-          <Route path="drills" element={<Drills />} />
-          <Route path="players" element={<Players />} />
-          <Route path="ai" element={<AIChat />} />
-          <Route path="settings" element={<Settings />} />
-          <Route path="philosophy" element={<Philosophy />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="calendar" element={<Calendar />} />
+            <Route path="session/:id" element={<Session />} />
+            <Route path="game/:id" element={<GameDay />} />
+            <Route path="drills" element={<Drills />} />
+            <Route path="players" element={<Players />} />
+            <Route path="ai" element={<AIChat />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="philosophy" element={<Philosophy />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </ErrorBoundary>
   )
 }
 
 export default App
+
