@@ -277,13 +277,18 @@ export default function Players() {
 
   const handleAddPlayer = async () => {
     if (!newName.trim()) return
-    const id = await addPlayer({ name: newName.trim(), emoji: newEmoji, color: newColor })
-    const refreshed = await getPlayers()
-    setPlayers(refreshed)
-    setNewName('')
-    setNewEmoji('⚽')
-    setNewColor('#16a34a')
-    setAdding(false)
+    try {
+      const id = await addPlayer({ name: newName.trim(), emoji: newEmoji, color: newColor })
+      const refreshed = await getPlayers()
+      setPlayers(refreshed)
+      setNewName('')
+      setNewEmoji('⚽')
+      setNewColor('#16a34a')
+      setAdding(false)
+    } catch (err) {
+      console.error('ADD PLAYER ERROR:', err)
+      alert(`Add Player Error: ${err.message}`)
+    }
   }
 
   return (

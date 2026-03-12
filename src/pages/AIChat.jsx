@@ -46,7 +46,7 @@ function Message({ msg }) {
         ? 'gradient-emerald text-white rounded-tr-sm'
         : 'glass-card-solid text-slate-300 rounded-tl-sm'
         }`}>
-        {msg.content.split('\n').map((line, i) => (
+        {(msg.content || '').split('\n').map((line, i) => (
           <p key={i} className={line === '' ? 'mt-2' : ''}>{line}</p>
         ))}
       </div>
@@ -71,25 +71,33 @@ export default function AIChat() {
   // Load API keys and build dynamic system prompt
   useEffect(() => {
     const init = async () => {
-      const key = await getSetting('groqApiKey')
-      const resolvedKey = key || import.meta.env.VITE_GROQ_API_KEY || null
-      setApiKey(resolvedKey)
-      const gKey = getGeminiKey()
-      setGeminiKey(gKey)
-      const hasAnyKey = !!(resolvedKey || gKey)
+      try {
+        const key = await getSetting('groqApiKey')
+        const resolvedKey = key || import.meta.env.VITE_GROQ_API_KEY || null
+        setApiKey(resolvedKey)
+        const gKey = getGeminiKey()
+        setGeminiKey(gKey)
+        const hasAnyKey = !!(resolvedKey || gKey)
 
-      // Build dynamic system prompt with live context
-      systemPromptRef.current = await buildSystemPrompt()
+        // Build dynamic system prompt with live context
+        systemPromptRef.current = await buildSystemPrompt()
 
-      if (!hasAnyKey) {
+        if (!hasAnyKey) {
+          setMessages([{
+            role: 'assistant',
+            content: "Hi Coach! 👋 I'm your AI coaching assistant with full access to your sessions, drills, and player data.\n\nTo get started, I need your Groq API key (it's free!). Head to Settings to add it.",
+          }])
+        } else {
+          setMessages([{
+            role: 'assistant',
+            content: "Hi Coach! 👋 I'm your AI coaching assistant with full access to your entire coaching system.\n\nI can:\n• 🎯 Create custom drills and add them to your library\n• 📋 Read and modify any session plan\n• 👥 Track player notes and development\n• 📊 Show your season overview\n\nJust ask me anything!",
+          }])
+        }
+      } catch (e) {
+        console.error('AIChat initialization error:', e)
         setMessages([{
           role: 'assistant',
-          content: "Hi Coach! 👋 I'm your AI coaching assistant with full access to your sessions, drills, and player data.\n\nTo get started, I need your Groq API key (it's free!). Head to Settings to add it.",
-        }])
-      } else {
-        setMessages([{
-          role: 'assistant',
-          content: "Hi Coach! 👋 I'm your AI coaching assistant with full access to your entire coaching system.\n\nI can:\n• 🎯 Create custom drills and add them to your library\n• 📋 Read and modify any session plan\n• 👥 Track player notes and development\n• 📊 Show your season overview\n\nJust ask me anything!",
+          content: "There was an error initializing the local database. Some features may not work correctly. Please make sure your browser supports IndexedDB.",
         }])
       }
     }
@@ -131,6 +139,8 @@ export default function AIChat() {
 
       // Tool calling loop (max 10 iterations for safety)
       let iterations = 0
+      let conversationHistory = [...apiMessages]
+      
       while (result.toolCalls && result.toolCalls.length > 0 && iterations < 10) {
         iterations++
 
@@ -156,13 +166,14 @@ export default function AIChat() {
           })
         }
 
-        // Send tool results back for final response
-        const followUp = [
-          ...apiMessages,
+        conversationHistory = [
+          ...conversationHistory,
           result.rawAssistantMessage,
           ...toolResults,
         ]
-        result = await callAI({ groqKey: apiKey, geminiKey, systemPrompt: systemPromptRef.current, messages: followUp })
+
+        // Send tool results back for final response
+        result = await callAI({ groqKey: apiKey, geminiKey, systemPrompt: systemPromptRef.current, messages: conversationHistory })
         setActiveProvider(result.provider)
       }
 

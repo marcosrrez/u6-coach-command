@@ -47,6 +47,18 @@ db.version(4).stores({
   activityChecks: '++id, sessionId, phaseIndex, activityIndex, checkedAt',
 });
 
+db.version(5).stores({
+  players: '++id, name, jerseyNumber, createdAt',
+  sessionCompletions: '++id, sessionId, completedAt, type',
+  playerNotes: '++id, sessionId, playerId, createdAt',
+  developmentScores: '++id, sessionId, playerId, createdAt',
+  phaseChecks: '++id, sessionId, phaseIndex, checkedAt',
+  settings: 'key',
+  sessionCustomizations: 'sessionId',
+  customDrills: '++id, name, category, framework, createdAt',
+  activityChecks: '++id, sessionId, phaseIndex, activityIndex, checkedAt',
+});
+
 // ─── Default Players ───────────────────────────────────────────────────────────
 export const DEFAULT_PLAYERS = [
   { name: 'Player 1', emoji: '⚽', color: '#16a34a', position: 'Field', jerseyNumber: 1 },
@@ -78,12 +90,13 @@ export async function updatePlayer(id, updates) {
 export async function addPlayer({ name, emoji, color, position, jerseyNumber }) {
   const players = await db.players.toArray();
   const maxJersey = players.length > 0 ? Math.max(...players.map(p => p.jerseyNumber || 0)) : 0;
+  const safeJersey = jerseyNumber || Math.max(maxJersey + 1, Math.floor(Date.now() / 1000000));
   return db.players.add({
     name: name || `Player ${players.length + 1}`,
     emoji: emoji || '⚽',
     color: color || '#16a34a',
     position: position || 'Field',
-    jerseyNumber: jerseyNumber || maxJersey + 1,
+    jerseyNumber: safeJersey,
     createdAt: new Date().toISOString(),
   });
 }
@@ -130,8 +143,9 @@ export async function isSessionComplete(sessionId) {
 // ─── Phase Check Operations ───────────────────────────────────────────────────
 export async function checkPhase(sessionId, phaseIndex) {
   const existing = await db.phaseChecks
-    .where('[sessionId+phaseIndex]')
-    .equals([sessionId, phaseIndex])
+    .where('sessionId')
+    .equals(sessionId)
+    .and((p) => p.phaseIndex === phaseIndex)
     .first();
   if (!existing) {
     await db.phaseChecks.add({

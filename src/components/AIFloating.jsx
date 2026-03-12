@@ -249,7 +249,7 @@ function Message({ msg }) {
         {isUser ? <User size={12} /> : <Bot size={12} />}
       </div>
       <div className={`max-w-[85%] rounded-2xl px-3 py-2.5 text-sm leading-relaxed ${isUser ? 'gradient-emerald text-white rounded-tr-sm' : 'glass-card-solid text-slate-300 rounded-tl-sm'}`}>
-        {msg.content.split('\n').map((line, i) => {
+        {(msg.content || '').split('\n').map((line, i) => {
           if (line.startsWith('- ') || line.startsWith('• ')) {
             return <p key={i} className="pl-3 relative before:content-['•'] before:absolute before:left-0 before:text-emerald-400">{line.slice(2)}</p>
           }
@@ -294,39 +294,47 @@ export default function AIFloating() {
   useEffect(() => {
     if (!open || initialized) return
     const init = async () => {
-      const key = await getSetting('groqApiKey')
-      const resolved = key || import.meta.env.VITE_GROQ_API_KEY || null
-      const gKey = getGeminiKey()
-      setGeminiKey(gKey)
-      const hasAnyKey = !!(resolved || gKey)
-      const pageCtx = getPageContext(pathname)
-      const base = await buildSystemPrompt()
-      systemPromptRef.current = base + `\n\n## Current Page Context\n${pageCtx.text}`
+      try {
+        const key = await getSetting('groqApiKey')
+        const resolved = key || import.meta.env.VITE_GROQ_API_KEY || null
+        const gKey = getGeminiKey()
+        setGeminiKey(gKey)
+        const hasAnyKey = !!(resolved || gKey)
+        const pageCtx = getPageContext(pathname)
+        const base = await buildSystemPrompt()
+        systemPromptRef.current = base + `\n\n## Current Page Context\n${pageCtx.text}`
 
-      // Restore saved chat history
-      const saved = await getSetting('aiChatHistory')
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved)
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setMessages(parsed)
-            setInitialized(true)
-            return
-          }
-        } catch { }
+        // Restore saved chat history
+        const saved = await getSetting('aiChatHistory')
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved)
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setMessages(parsed)
+              return
+            }
+          } catch { } // ignore JSON error
+        }
+
+        // No history — show welcome
+        setMessages([{
+          role: 'assistant',
+          content: hasAnyKey
+            ? `Hey Coach! 👋 How can I help you today?`
+            : `Hi Coach! 👋 Add your free Groq API key in Settings to unlock AI coaching.`,
+        }])
+      } catch (e) {
+        console.error('AIFloating init error:', e)
+        setMessages([{
+          role: 'assistant',
+          content: 'Hi Coach! 👋 Add your free Groq API key in Settings to unlock AI coaching.',
+        }])
+      } finally {
+        setInitialized(true)
       }
-
-      // No history — show welcome
-      setMessages([{
-        role: 'assistant',
-        content: hasAnyKey
-          ? `Hey Coach! 👋 How can I help you today?`
-          : `Hi Coach! 👋 Add your free Groq API key in Settings to unlock AI coaching.`,
-      }])
-      setInitialized(true)
     }
     init()
-  }, [open, initialized])
+  }, [open, initialized, pathname])
 
   // ── Persist chat to IndexedDB whenever messages change ──────────────────────
   useEffect(() => {
@@ -408,6 +416,7 @@ export default function AIFloating() {
       setActiveProvider(result.provider)
       let currentMessages = [...newMessages]
       let iterations = 0
+      let conversationHistory = [...apiMessages]
 
       while (result.toolCalls?.length > 0 && iterations < 10) {
         iterations++
@@ -433,10 +442,16 @@ export default function AIFloating() {
           toolResults.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(toolResult) })
         }
 
+        conversationHistory = [
+          ...conversationHistory,
+          result.rawAssistantMessage,
+          ...toolResults,
+        ]
+
         result = await callAI({
           groqKey: apiKey, geminiKey,
           systemPrompt: systemPromptRef.current,
-          messages: [...apiMessages, result.rawAssistantMessage, ...toolResults],
+          messages: conversationHistory,
         })
         setActiveProvider(result.provider)
       }
@@ -458,6 +473,10 @@ export default function AIFloating() {
   const pageCtx = getPageContext(pathname)
   const badge = getPageBadge(pathname)
   const hasUserMessages = messages.some(m => m.role === 'user')
+
+  if (pathname === '/ai') {
+    return null
+  }
 
   return (
     <>
